@@ -35,15 +35,15 @@ The repository contains the baseline product specifications, desktop web workspa
 - Follow-up run #5 (commit `36ccfe2`): desktop checks passed; Ruff still failed. The workflow was updated to emit GitHub-format lint diagnostics and run pytest independently even if lint fails.
 - Run #6 (`43510250466`, commit `f7075b2`): desktop typecheck/build passed; gateway pytest passed (10 tests). Ruff identified two deprecated `FrozenSet` annotations and one unsorted import block.
 - Run #11 (`43510516623`, commit `0de8b65`): desktop typecheck/build passed; Ruff passed; gateway tests passed. The three lint findings are resolved.
-- Tauri 2 shell configuration and Rust project structure have been committed. A Windows GitHub Actions job has now been added to compile the native shell; its first result is pending.
+- Tauri 2 shell configuration and Rust project structure have been committed. Windows run #23 (`43512265795`, icon commit `6273c96`) passed all three jobs, including native `cargo check` on `windows-latest`.
 - The frontend package manifest now includes Tauri dependencies. The CI install uses `--no-frozen-lockfile`; run `pnpm install` locally to refresh the committed lockfile before relying on frozen installs.
-- No native Windows/Tauri compile or installer build has yet been confirmed.
+- Native Windows/Tauri compilation is now confirmed by CI. The workflow has been upgraded to link a release executable and upload it as a Windows x64 artifact; that executable build is pending. No MSI/NSIS installer has been built.
 
 The policy module is a decision helper, not a complete security boundary. The SQL migration intentionally leaves RLS disabled until trusted workspace membership and authentication are implemented. Do not expose these tables to anonymous clients.
 
 ## Next integrated engineering targets
-1. Confirm the Windows native-shell compilation job passes.
-2. Refresh and commit the pnpm lockfile for the new Tauri packages.
+1. Confirm the Windows release executable links and is uploaded successfully.
+2. Pin the generated pnpm lockfile and switch CI to frozen dependency installation.
 3. Implement a supervised local gateway lifecycle and owner-only session boundary before project writes.
 4. Implement trusted workspace membership, database access, RLS policies, and append-only audit records.
 5. Implement approval issuance and single-use consumption bound to exact action arguments.
