@@ -10,7 +10,7 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-Set a strong local session secret before starting the gateway. Use at least 32 random characters and keep it out of source control and the frontend:
+Set a strong local session secret before starting the gateway manually. Use at least 32 random characters and keep it out of source control and the frontend:
 
 ```powershell
 $env:JARVIS_SESSION_TOKEN = "<a-long-random-local-secret>"
@@ -21,12 +21,19 @@ Health endpoint: GET /health (public liveness only).
 
 All other routes, including /v1/*, /docs, and /openapi.json, require the X-Jarvis-Session header. Missing or invalid caller tokens are rejected. If the gateway process has no token or a token shorter than 32 characters, protected routes fail closed with HTTP 503. Token comparison uses a constant-time comparison.
 
+## Desktop integration
+
+- The Tauri app generates a fresh token at launch and passes it to the packaged gateway sidecar through the process environment.
+- The token is not returned to the webview or placed in application logs.
+- The packaged gateway is restricted to loopback binding on 127.0.0.1.
+- The Rust process owns the sidecar lifecycle and terminates it when the desktop exits.
+- The webview currently checks only the public health endpoint. A native authenticated request bridge for protected routes is still needed.
+- Windows CI builds the gateway sidecar with PyInstaller and packages it with the app; the full NSIS installer path is under validation.
+
 ## Security foundation
 
 - The gateway session token is a local process secret, not the user's permanent identity and not proof of workspace membership.
 - Do not hardcode the token in the React frontend, commit it, put it in command-line arguments, or print it to logs.
-- The desktop must eventually call a native, authenticated gateway bridge that adds this header without returning the secret to JavaScript.
-- The native app does not yet generate or provision this token, start/monitor the gateway process, or shut it down. Until that lifecycle is implemented, this authentication gate is a tested foundation rather than a connected user experience.
 - app.policy.evaluate is a fail-closed decision function; it does not execute tools.
 - Read-only and reversible actions may be allowed only when identity, workspace, target, and required scope are present.
 - External side effects and high-impact actions require a separate explicit approval flow.
@@ -39,4 +46,4 @@ Apply migrations in migrations/ using a privileged migration role. The initial s
 
 ## Current limitations
 
-The gateway does not yet authenticate the owner, persist sessions, persist projects, execute tools, call model providers, implement approval consumption, or start automatically with the desktop. The local session header is an initial process-level gate only; it is not a substitute for owner authentication or a trusted authorization boundary.
+The gateway does not yet authenticate the owner, persist sessions, persist projects, execute tools, call model providers, or implement approval consumption. The process token is only an initial local gate; it is not a substitute for owner authentication or a trusted authorization boundary.
