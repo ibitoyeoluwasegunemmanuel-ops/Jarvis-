@@ -141,6 +141,11 @@ jobs:
             if ($projectList.Count -lt 1 -or $projectList[0].id -ne $project.id) {
               throw "Packaged gateway did not persist the owner project"
             }
+            $statusBody = @{ status = "paused" } | ConvertTo-Json -Compress
+            $updatedProject = Invoke-RestMethod -Method Patch -Uri "http://127.0.0.1:8765/v1/projects/$($project.id)/status" -Headers $ownerHeaders -ContentType "application/json" -Body $statusBody -TimeoutSec 5
+            if ($updatedProject.status -ne "paused") {
+              throw "Packaged gateway did not update project status"
+            }
 
             $loginBody = @{ password = $setupPassword } | ConvertTo-Json -Compress
             $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/login" -Headers $headers -ContentType "application/json" -Body $loginBody -TimeoutSec 10
