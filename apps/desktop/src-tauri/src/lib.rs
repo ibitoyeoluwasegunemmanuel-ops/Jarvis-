@@ -387,7 +387,7 @@ async fn update_project_status(
     if !["active", "paused", "completed"].contains(&status.as_str()) {
         return Err("project_status_invalid".to_string());
     }
-    if project_id.is_empty() || project_id.len() > 64 {
+    if project_id.len() != 32 || !project_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("project_id_invalid".to_string());
     }
 
