@@ -7,7 +7,11 @@ from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
 
 @pytest.fixture
 def actor():
-    return ActorContext("owner-1", "workspace-1", frozenset({"projects:read", "files:write", "email:send"}))
+    return ActorContext(
+        "owner-1",
+        "workspace-1",
+        frozenset({"projects:read", "files:write", "email:send"}),
+    )
 
 
 def request(tier=RiskTier.READ_ONLY, scope="projects:read", **kwargs):
@@ -54,11 +58,46 @@ def test_health_endpoint_reports_gateway_liveness():
     assert response.json()["service"] == "jarvis-gateway"
 
 
-def test_capabilities_endpoint_does_not_claim_unbuilt_features():
+def test_protected_endpoint_rejects_missing_session(monkeypatch):
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "a" * 40)
     response = client.get("/v1/system/capabilities")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "valid_gateway_session_required"
+
+
+def test_protected_endpoint_rejects_invalid_session(monkeypatch):
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "a" * 40)
+    response = client.get(
+        "/v1/system/capabilities",
+        headers={"X-Jarvis-Session": "wrong-token"},
+    )
+    assert response.status_code == 401
+
+
+def test_protected_endpoint_fails_closed_when_session_is_not_configured(monkeypatch):
+    monkeypatch.delenv("JARVIS_SESSION_TOKEN", raising=False)
+    response = client.get(
+        "/v1/system/capabilities",
+        headers={"X-Jarvis-Session": "a" * 40},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "gateway_session_not_configured"
+
+
+def test_capabilities_endpoint_requires_session_and_reports_unbuilt_features(monkeypatch):
+    token = "jarvis-test-session-token-" + ("x" * 40)
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", token)
+    response = client.get(
+        "/v1/system/capabilities",
+        headers={"X-Jarvis-Session": token},
+    )
     assert response.status_code == 200
     capabilities = response.json()["capabilities"]
+    security = response.json()["security"]
     assert capabilities["health_check"] is True
     assert capabilities["authorization_policy"] is True
+    assert capabilities["gateway_session_authentication"] is True
     assert capabilities["agent_execution"] is False
     assert capabilities["persistent_memory"] is False
+    assert security["gateway_session_configured"] is True
+    assert security["owner_authentication_configured"] is False
