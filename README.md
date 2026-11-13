@@ -36,32 +36,32 @@ These are proposed defaults, not irreversible vendor commitments. Provider and h
 
 Install workspace dependencies:
 
-```bash
+```powershell
 pnpm install
 ```
 
-Run the desktop interface in a browser:
+Build the Windows gateway sidecar:
+
+```powershell
+.\scripts\build-gateway-sidecar.ps1
+```
+
+Run the native Tauri desktop shell:
+
+```powershell
+pnpm dev:app
+```
+
+Run only the frontend in a browser:
 
 ```bash
 pnpm dev:desktop
 ```
 
-Run the native Tauri desktop shell:
-
-```bash
-pnpm dev:app
-```
-
-Build the desktop interface:
-
-```bash
-pnpm build:desktop
-```
-
-The Windows CI workflow packages the Python gateway as a sidecar and builds an NSIS installer. Local native development also needs the target-specific gateway sidecar under apps/desktop/src-tauri/binaries.
+The sidecar build helper requires Python 3.11, Rust stable, and PyInstaller. It creates the target-triple binary under apps/desktop/src-tauri/binaries.
 
 ## Current status
-The repository contains the product and security specifications, a React desktop workspace, a FastAPI gateway, gateway session-token checks, and a Tauri 2 native shell that starts the gateway sidecar with a fresh process token. The interface monitors gateway health. The Windows sidecar smoke test and NSIS installer are being validated in CI. Voice, persistent project memory, specialist execution, and computer-use tools are not yet implemented.
+The repository contains the product and security specifications, React desktop workspace, FastAPI gateway, session-token checks, and a Tauri 2 native shell that starts the gateway sidecar with a fresh process token. The Windows CI run #38 built an NSIS installer and passed the packaged gateway authentication smoke test. The installer has not yet been runtime-tested on a physical Windows device. Voice, persistent project memory, specialist execution, and computer-use tools remain in development.
 
 ## Safety boundary
 JARVIS is an authorized personal productivity and engineering assistant. It must not perform covert recording, unauthorized access, credential theft, malware deployment, evasion, or surveillance of targeted private individuals. Security testing is limited to systems the user owns or is explicitly authorized to assess.
