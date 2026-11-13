@@ -4,26 +4,27 @@
 
 The desktop workspace is a Tauri 2 application using the React/Vite interface.
 
-- Vite serves the interface on the fixed loopback development port 1420.
-- Tauri uses the compiled apps/desktop/dist assets for packaged builds.
-- The native Rust startup generates a fresh per-launch session token using two UUIDv4 values.
+- Vite serves the interface on fixed loopback development port 1420.
+- Tauri uses the compiled apps/desktop/dist assets in packaged builds.
+- Native Rust startup creates a fresh per-launch token using two UUIDv4 values.
 - The native process starts the packaged Python gateway sidecar with the token in its process environment and fixed loopback arguments (127.0.0.1:8765).
 - The native process drains sidecar output without forwarding it to the webview and terminates the process group when the desktop exits.
 - The webview never receives the session token. Its gateway status widget polls only the public liveness endpoint.
 - The shell-plugin capability is scoped to one named sidecar and the exact host/port argument sequence; arbitrary shell commands are not permitted.
 - The Python gateway refuses to bind to a non-loopback host.
-- The Windows CI workflow builds the sidecar with PyInstaller and is configured to create an NSIS installer.
+- Windows CI builds the sidecar with PyInstaller, smoke-tests authentication, and produces an NSIS installer. Run #38 passed these checks.
 
-## Run locally
+## Run locally on Windows
 
-From the repository root:
+Install workspace dependencies and build the gateway sidecar:
 
-```bash
+```powershell
 pnpm install
+.\scripts\build-gateway-sidecar.ps1
 pnpm dev:app
 ```
 
-The native gateway sidecar must first exist at apps/desktop/src-tauri/binaries/jarvis-gateway-<target-triple>.exe. The Windows CI workflow stages this automatically. A local Windows developer must build the PyInstaller sidecar and copy it to that target-specific filename before launching Tauri.
+The helper requires Python 3.11 and the Rust stable toolchain. It creates apps/desktop/src-tauri/binaries/jarvis-gateway-<target-triple>.exe, which Tauri uses as its external binary.
 
 For a frontend-only development session:
 
@@ -45,7 +46,7 @@ This is a private desktop shell with a process-level gateway session gate, not y
 
 ## Next engineering gate
 
-1. Verify the PyInstaller sidecar smoke test and NSIS installer in Windows CI.
+1. Install and launch the NSIS installer on a physical Windows device.
 2. Add a narrowly scoped native request bridge for protected APIs without returning the token to JavaScript.
 3. Add owner authentication and trusted workspace membership before any project writes.
 4. Add approval issuance and single-use consumption bound to exact action arguments.
