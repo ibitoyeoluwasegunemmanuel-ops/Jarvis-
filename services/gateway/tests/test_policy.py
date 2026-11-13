@@ -378,3 +378,79 @@ def test_project_access_is_blocked_after_owner_logout(monkeypatch, tmp_path):
     denied = client.get("/v1/projects", headers=headers)
     assert denied.status_code == 401
 
+def test_project_status_changes_are_owner_gated_and_audited(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    created = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Handly", "description": "Service marketplace"},
+    )
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+
+    paused = client.patch(
+        f"/v1/projects/{project_id}/status",
+        headers=headers,
+        json={"status": "paused"},
+    )
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+
+    same_status = client.patch(
+        f"/v1/projects/{project_id}/status",
+        headers=headers,
+        json={"status": "paused"},
+    )
+    assert same_status.status_code == 200
+
+    connection = connect_database()
+    try:
+        events = connection.execute(
+            "SELECT event_type, details_json FROM project_audit_events "
+            "WHERE entity_id = ? ORDER BY id",
+            (project_id,),
+        ).fetchall()
+        assert len(events) == 2
+        assert events[0]["event_type"] == "project.created"
+        assert events[1]["event_type"] == "project.status_changed"
+        assert '"from":"active"' in events[1]["details_json"]
+        assert '"to":"paused"' in events[1]["details_json"]
+    finally:
+        connection.close()
+
+
+def test_project_status_update_rejects_invalid_status_and_unauthenticated_call(
+    monkeypatch, tmp_path
+):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    created = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "CareLink Africa", "description": ""},
+    )
+    project_id = created.json()["id"]
+
+    invalid = client.patch(
+        f"/v1/projects/{project_id}/status",
+        headers=headers,
+        json={"status": "deleted"},
+    )
+    assert invalid.status_code == 422
+
+    unauthenticated = client.patch(
+        f"/v1/projects/{project_id}/status",
+        headers=_process_headers(),
+        json={"status": "completed"},
+    )
+    assert unauthenticated.status_code == 401
+
+
+def test_project_status_update_returns_404_for_unknown_project(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    response = client.patch(
+        "/v1/projects/unknown-project/status",
+        headers=headers,
+        json={"status": "completed"},
+    )
+    assert response.status_code == 404
+
