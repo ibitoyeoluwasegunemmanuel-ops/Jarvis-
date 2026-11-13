@@ -12,13 +12,33 @@ export default function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${gateway}/health`, { signal: controller.signal })
-      .then(async response => {
+    let retryTimer: number | undefined;
+
+    const checkGateway = async () => {
+      try {
+        const response = await fetch(`${gateway}/health`, {
+          signal: controller.signal
+        });
         if (!response.ok) throw new Error("Gateway unavailable");
         setHealth(await response.json() as Health);
-      })
-      .catch(() => setHealthError(true));
-    return () => controller.abort();
+        setHealthError(false);
+      } catch {
+        if (!controller.signal.aborted) {
+          setHealth(null);
+          setHealthError(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          retryTimer = window.setTimeout(checkGateway, 3000);
+        }
+      }
+    };
+
+    void checkGateway();
+    return () => {
+      controller.abort();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, []);
 
   const nav = [
