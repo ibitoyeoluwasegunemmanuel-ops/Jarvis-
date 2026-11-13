@@ -2,7 +2,7 @@
   "name": "jarvis",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@10.0.0",
+  "packageManager": "pnpm@10.22.0",
   "scripts": {
     "dev:desktop": "pnpm --filter @jarvis/desktop dev",
     "build:desktop": "pnpm --filter @jarvis/desktop build",
