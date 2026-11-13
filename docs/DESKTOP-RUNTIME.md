@@ -8,7 +8,8 @@ The desktop workspace is now structured as a Tauri 2 application using the exist
 - Tauri embeds the compiled `apps/desktop/dist` assets in packaged builds.
 - The native Rust entry point starts a Tauri window and registers no application commands or privileged plugins.
 - The default capability grants only Tauri core defaults to the `main` window.
-- Bundling is intentionally disabled until the Windows installer identity, icon set, signing approach, and release process are ready.
+- A JARVIS Windows application icon (`icon.ico`) and editable SVG source (`icon.svg`) are included.
+- Bundling remains intentionally disabled until installer identity, signing approach, release configuration, and release validation are ready.
 
 ## Run locally
 
@@ -38,7 +39,7 @@ This is a native application shell, not yet a secure local agent runtime.
 
 ## Next engineering gate
 
-1. Build and test this native shell on a Windows runner.
+1. Confirm the Windows native compile with the icon asset present.
 2. Implement a supervised local gateway lifecycle with an owner-only session token.
 3. Bind all mutating actions to authenticated identity, workspace, exact arguments, expiry, and one-time approval.
 4. Add only the narrowly scoped Tauri capabilities required by each reviewed feature.
