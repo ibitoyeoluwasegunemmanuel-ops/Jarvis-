@@ -1,0 +1,12 @@
+{
+  "name": "jarvis",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev:desktop": "pnpm --filter @jarvis/desktop dev",
+    "build:desktop": "pnpm --filter @jarvis/desktop build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": { "node": ">=20.0.0", "pnpm": ">=9.0.0" }
+}
