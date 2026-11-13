@@ -97,7 +97,7 @@ def _connect() -> sqlite3.Connection:
 
 def _validate_password(password: str) -> None:
     if not isinstance(password, str):
-        raise ValueError("password_must_be_text")
+        raise TypeError("password_must_be_text")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError("password_too_short")
     if len(password) > MAX_PASSWORD_LENGTH or "\x00" in password:
