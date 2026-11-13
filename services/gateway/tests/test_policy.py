@@ -1,7 +1,10 @@
+import sqlite3
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.owner_auth import connect_database
 from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
 
 
@@ -258,4 +261,119 @@ def test_owner_password_must_meet_minimum_length(monkeypatch, tmp_path):
         json={"password": "short"},
     )
     assert response.status_code == 422
+
+def _create_owner_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    process = "test-gateway-session-" + ("g" * 40)
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", process)
+    process_headers = {"X-Jarvis-Session": process}
+    setup = client.post(
+        "/v1/auth/setup",
+        headers=process_headers,
+        json={"password": "correct-horse-battery-7"},
+    )
+    assert setup.status_code == 200
+    return {
+        **process_headers,
+        "X-Jarvis-Owner-Session": setup.json()["owner_session_token"],
+    }
+
+
+def test_project_routes_require_a_valid_owner_session(monkeypatch, tmp_path):
+    process = "test-gateway-session-" + ("g" * 40)
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", process)
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    headers = {"X-Jarvis-Session": process}
+
+    denied = client.get("/v1/projects", headers=headers)
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "valid_owner_session_required"
+
+    owner_headers = _create_owner_session(monkeypatch, tmp_path)
+    allowed = client.get("/v1/projects", headers=owner_headers)
+    assert allowed.status_code == 200
+    assert allowed.json() == []
+
+
+def test_projects_persist_under_owner_and_write_immutable_audit_event(
+    monkeypatch, tmp_path
+):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    response = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={
+            "name": "Drive Secure",
+            "description": "Connected vehicle security platform",
+        },
+    )
+    assert response.status_code == 201
+    project = response.json()
+    assert project["name"] == "Drive Secure"
+    assert project["description"] == "Connected vehicle security platform"
+    assert project["status"] == "active"
+    assert "owner_id" not in project
+
+    project_list = client.get("/v1/projects", headers=headers)
+    assert project_list.status_code == 200
+    assert project_list.json() == [project]
+
+    detail = client.get(f"/v1/projects/{project['id']}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json() == project
+
+    connection = connect_database()
+    try:
+        audit_count = connection.execute(
+            "SELECT COUNT(*) FROM project_audit_events WHERE entity_id = ?",
+            (project["id"],),
+        ).fetchone()[0]
+        assert audit_count == 1
+        with pytest.raises(sqlite3.IntegrityError, match="append_only"):
+            connection.execute(
+                "DELETE FROM project_audit_events WHERE entity_id = ?",
+                (project["id"],),
+            )
+        connection.rollback()
+    finally:
+        connection.close()
+
+
+def test_project_api_rejects_caller_supplied_owner_fields(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    response = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Handly", "owner_id": 999},
+    )
+    assert response.status_code == 422
+
+
+def test_project_create_rejects_blank_name_and_missing_project(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    invalid = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "   ", "description": "No name"},
+    )
+    assert invalid.status_code == 422
+
+    missing = client.get("/v1/projects/not-a-real-project", headers=headers)
+    assert missing.status_code == 404
+
+
+def test_project_access_is_blocked_after_owner_logout(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    created = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "CareLink Africa", "description": ""},
+    )
+    assert created.status_code == 201
+
+    logout = client.post("/v1/auth/logout", headers=headers)
+    assert logout.status_code == 200
+
+    denied = client.get("/v1/projects", headers=headers)
+    assert denied.status_code == 401
 
