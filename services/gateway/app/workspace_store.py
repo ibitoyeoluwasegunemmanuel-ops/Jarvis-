@@ -115,3 +115,68 @@ def create_project(name: str, description: str = "") -> dict[str, Any]:
         raise
     finally:
         connection.close()
+
+def update_project_status(project_id: str, status: str) -> dict[str, Any] | None:
+    """Change a local project status and append an immutable audit event."""
+    allowed_statuses = {"active", "paused", "completed"}
+    if status not in allowed_statuses:
+        raise ValueError("project_status_invalid")
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return None
+
+    now = time.time()
+    connection = connect_database()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT status FROM projects WHERE id = ? AND owner_id = 1",
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            return None
+
+        previous_status = str(row["status"])
+        if previous_status != status:
+            connection.execute(
+                """
+                UPDATE projects
+                SET status = ?, updated_at = ?
+                WHERE id = ? AND owner_id = 1
+                """,
+                (status, now, project_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO project_audit_events(
+                    actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+                ) VALUES (1, 'project.status_changed', 'project', ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    json.dumps(
+                        {"from": previous_status, "to": status},
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    now,
+                ),
+            )
+
+        updated = connection.execute(
+            """
+            SELECT id, name, description, status, created_at, updated_at
+            FROM projects
+            WHERE id = ? AND owner_id = 1
+            """,
+            (project_id,),
+        ).fetchone()
+        connection.commit()
+        return dict(updated) if updated is not None else None
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
