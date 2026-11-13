@@ -104,6 +104,8 @@ async def capabilities(request: Request) -> dict[str, object]:
     }
 
 class OwnerPasswordRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     password: str = Field(min_length=12, max_length=256)
 
 
@@ -157,6 +159,8 @@ def owner_auth_logout(request: Request) -> dict[str, bool]:
     return {"revoked": True}
 
 class ProjectCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2000)
 
