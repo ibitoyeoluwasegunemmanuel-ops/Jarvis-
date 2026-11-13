@@ -88,7 +88,7 @@ async def capabilities(request: Request) -> dict[str, object]:
             "health_check": True,
             "authorization_policy": True,
             "gateway_session_authentication": True,
-            "project_persistence": False,
+            "project_persistence": True,
             "agent_execution": False,
             "computer_use": False,
             "voice": False,
