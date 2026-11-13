@@ -31,8 +31,36 @@ JARVIS is designed as a persistent, multimodal, voice-first AI system with a rea
 
 These are proposed defaults, not irreversible vendor commitments. Provider and hardware decisions require evidence-based evaluation.
 
+## Development
+
+Install workspace dependencies:
+
+```bash
+pnpm install
+```
+
+Run the desktop interface in a browser:
+
+```bash
+pnpm dev:desktop
+```
+
+Run the native Tauri desktop shell:
+
+```bash
+pnpm dev:app
+```
+
+Build the desktop interface:
+
+```bash
+pnpm build:desktop
+```
+
+The native Windows shell is checked in GitHub Actions. Windows bundling remains disabled until installer branding, signing, and release configuration are ready.
+
 ## Current status
-Specification phase. This repository begins with product, architecture, data, security, and engineering specifications. No working desktop application, connected integrations, or deployed service is claimed yet.
+The repository now contains the product and security specifications, a React desktop workspace, a FastAPI gateway foundation, automated tests, and a Tauri 2 native-shell scaffold. The native Windows compile is under CI validation. No production agent execution, voice, persistent memory, computer-use tools, or deployed service is claimed yet.
 
 ## Safety boundary
 JARVIS is an authorized personal productivity and engineering assistant. It must not perform covert recording, unauthorized access, credential theft, malware deployment, evasion, or surveillance of targeted private individuals. Security testing is limited to systems the user owns or is explicitly authorized to assess.
