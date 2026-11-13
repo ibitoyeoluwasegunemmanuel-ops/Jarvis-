@@ -36,6 +36,14 @@ type OwnerAuthStatus = {
   setup_required: boolean;
   authenticated: boolean;
 };
+type Project = {
+  id: string;
+  name: string;
+  description: string;
+  status: "active" | "paused" | "completed";
+  created_at: number;
+  updated_at: number;
+};
 
 const gateway = import.meta.env.VITE_GATEWAY_URL ?? "http://127.0.0.1:8765";
 
@@ -165,6 +173,12 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [active, setActive] = useState("Overview");
   const [message, setMessage] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectError, setProjectError] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -255,6 +269,73 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (active !== "Projects" || !authStatus?.authenticated) return;
+
+    let cancelled = false;
+    setProjectsLoading(true);
+    setProjectError("");
+
+    invoke<Project[]>("list_projects")
+      .then(items => {
+        if (!cancelled) setProjects(items);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        const message = String(error);
+        if (message.includes("owner_session_expired") || message.includes("owner_session_required")) {
+          setAuthStatus(current => current
+            ? { ...current, authenticated: false }
+            : current
+          );
+          setProjectError("Your owner session expired. Sign in again to view projects.");
+        } else {
+          setProjectError("JARVIS could not load the local project list.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, authStatus?.authenticated]);
+
+  const submitProject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = projectName.trim();
+    if (!name || creatingProject) return;
+
+    setCreatingProject(true);
+    setProjectError("");
+    try {
+      const project = await invoke<Project>("create_project", {
+        name,
+        description: projectDescription.trim()
+      });
+      setProjects(current => [project, ...current.filter(item => item.id !== project.id)]);
+      setProjectName("");
+      setProjectDescription("");
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current
+          ? { ...current, authenticated: false }
+          : current
+        );
+        setProjectError("Your owner session expired. Sign in again to create a project.");
+      } else if (detail.includes("project_details_invalid")) {
+        setProjectError("Check the project name and description, then try again.");
+      } else {
+        setProjectError("JARVIS could not save this project. Your draft is still available.");
+        setProjectName(name);
+      }
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
   const nav = [
     { label: "Overview", icon: LayoutDashboard },
     { label: "Projects", icon: FolderKanban },
@@ -295,15 +376,95 @@ export default function App() {
       <div className="content">
         {authError && <div className="dashboard-error">{authError}</div>}
         <div className="welcome-row"><div><div className="eyebrow"><span className="pulse"/> SYSTEM INITIALISING</div><h1>Your workspace.<br/><em>One intelligent system.</em></h1><p className="lead">A unified environment for building, analysing, researching and operating your projects.</p></div><div className="presence-card"><div className="presence-orb"><AudioLines size={27}/></div><div><b>JARVIS presence</b><span>Voice interface is being prepared</span></div><span className="coming">IN DEVELOPMENT</span></div></div>
-        <div className="section-heading"><div><span className="eyebrow">CONTROL CENTRE</span><h2>{active === "Overview" ? "System overview" : active}</h2></div><span className="muted">Private deployment · Local-first design</span></div>
-        <div className="metric-grid">
-          <article className="metric-card"><div className="metric-icon violet"><BrainCircuit size={18}/></div><span>PROJECT MEMORY</span><strong>Preparing</strong><small>Persistent context layer</small></article>
-          <article className="metric-card"><div className="metric-icon blue"><TerminalSquare size={18}/></div><span>ENGINEERING</span><strong>Planned</strong><small>Build · Test · Review</small></article>
-          <article className="metric-card"><div className="metric-icon green"><ShieldCheck size={18}/></div><span>SECURITY</span><strong>{capabilities?.security.gateway_session_configured ? "Session protected" : capabilitiesError ? "Bridge unavailable" : "Checking session"}</strong><small>{capabilities?.security.owner_authentication_configured ? "Local owner account verified" : "Gateway session and owner login are separate controls"}</small></article>
-          <article className="metric-card"><div className="metric-icon amber"><Radio size={18}/></div><span>MONITORING</span><strong>Not connected</strong><small>No background checks yet</small></article>
-        </div>
-        <div className="lower-grid"><article className="panel-card"><div className="panel-title"><div><span className="eyebrow">COMMAND INTERFACE</span><h3>What are we working on?</h3></div><span className="tag">TEXT MODE</span></div><p className="panel-copy">Owner authentication is active. The native bridge can read gateway state without exposing its secrets; project actions and specialist agents are the next layer.</p><div className="composer"><input value={message} onChange={e => setMessage(e.target.value)} placeholder="Describe a task…" aria-label="Task description" /><button disabled={!message.trim()} onClick={() => setMessage("")}><Sparkles size={16}/> Clear draft</button></div><div className="hint"><Mic size={14}/> Voice input will be enabled after realtime session and permission controls are implemented.</div></article>
-        <article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
+        {active === "Projects" ? (
+          <section className="projects-workspace">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">YOUR LOCAL WORKSPACE</span>
+                <h2>Projects</h2>
+              </div>
+              <span className="muted">{projects.length} saved {projects.length === 1 ? "project" : "projects"}</span>
+            </div>
+            <div className="projects-layout">
+              <article className="panel-card project-create-card">
+                <div className="panel-title">
+                  <div><span className="eyebrow">NEW WORKSPACE</span><h3>Create a project</h3></div>
+                  <span className="tag">OWNER ONLY</span>
+                </div>
+                <p className="panel-copy">Keep a project’s purpose and status in JARVIS. Project records are stored locally on this device.</p>
+                <form className="project-form" onSubmit={submitProject}>
+                  <label htmlFor="project-name">Project name</label>
+                  <input
+                    id="project-name"
+                    value={projectName}
+                    onChange={event => setProjectName(event.target.value)}
+                    maxLength={120}
+                    placeholder="e.g. Drive Secure"
+                    required
+                  />
+                  <label htmlFor="project-description">Description</label>
+                  <textarea
+                    id="project-description"
+                    value={projectDescription}
+                    onChange={event => setProjectDescription(event.target.value)}
+                    maxLength={2000}
+                    rows={4}
+                    placeholder="What are you building?"
+                  />
+                  <div className="project-form-footer">
+                    <span>{projectDescription.length}/2000</span>
+                    <button type="submit" disabled={creatingProject || !projectName.trim()}>
+                      <Sparkles size={15}/>{creatingProject ? "Saving…" : "Create project"}
+                    </button>
+                  </div>
+                </form>
+                {projectError && <div className="project-error">{projectError}</div>}
+              </article>
+              <article className="panel-card project-list-card">
+                <div className="panel-title">
+                  <div><span className="eyebrow">SAVED LOCALLY</span><h3>Your projects</h3></div>
+                  <FolderKanban size={18}/>
+                </div>
+                {projectsLoading ? (
+                  <div className="projects-empty">Loading your projects…</div>
+                ) : projects.length === 0 ? (
+                  <div className="projects-empty">
+                    <div className="projects-empty-icon"><FolderKanban size={22}/></div>
+                    <b>No projects yet</b>
+                    <span>Create your first project to start building your JARVIS workspace.</span>
+                  </div>
+                ) : (
+                  <div className="project-list">
+                    {projects.map(project => (
+                      <div className="project-row" key={project.id}>
+                        <div className="project-symbol"><FolderKanban size={17}/></div>
+                        <div className="project-main">
+                          <b>{project.name}</b>
+                          <span>{project.description || "No description added yet."}</span>
+                          <small>Updated {new Date(project.updated_at * 1000).toLocaleDateString()}</small>
+                        </div>
+                        <span className={`project-status ${project.status}`}>{project.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            </div>
+            <div className="projects-note"><ShieldCheck size={14}/> Project access is checked by the local gateway using your signed-in owner session. The interface cannot choose or change project ownership.</div>
+          </section>
+        ) : (
+          <>
+            <div className="section-heading"><div><span className="eyebrow">CONTROL CENTRE</span><h2>{active === "Overview" ? "System overview" : active}</h2></div><span className="muted">Private deployment · Local-first design</span></div>
+            <div className="metric-grid">
+              <article className="metric-card"><div className="metric-icon violet"><FolderKanban size={18}/></div><span>PROJECTS</span><strong>{projects.length} saved</strong><small>Locally stored workspaces</small></article>
+              <article className="metric-card"><div className="metric-icon blue"><TerminalSquare size={18}/></div><span>ENGINEERING</span><strong>Foundation</strong><small>Build · Test · Review</small></article>
+              <article className="metric-card"><div className="metric-icon green"><ShieldCheck size={18}/></div><span>SECURITY</span><strong>{capabilities?.security.gateway_session_configured ? "Session protected" : capabilitiesError ? "Bridge unavailable" : "Checking session"}</strong><small>{capabilities?.security.owner_session_authenticated ? "Owner session verified" : "Local owner account configured"}</small></article>
+              <article className="metric-card"><div className="metric-icon amber"><Radio size={18}/></div><span>MONITORING</span><strong>Not connected</strong><small>No background checks yet</small></article>
+            </div>
+            <div className="lower-grid"><article className="panel-card"><div className="panel-title"><div><span className="eyebrow">COMMAND INTERFACE</span><h3>What are we working on?</h3></div><span className="tag">TEXT MODE</span></div><p className="panel-copy">Owner authentication and local project storage are active. Task execution and specialist agents are not connected yet.</p><div className="composer"><input value={message} onChange={e => setMessage(e.target.value)} placeholder="Describe a task…" aria-label="Task description" /><button disabled={!message.trim()} onClick={() => setMessage("")}><Sparkles size={16}/> Clear draft</button></div><div className="hint"><Mic size={14}/> Voice input will be enabled after realtime session and permission controls are implemented.</div></article>
+            <article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
+          </>
+        )}
         <footer><span>JARVIS · PRIVATE AI OPERATING ENVIRONMENT</span><span><MonitorUp size={13}/> Desktop build · Early foundation</span></footer>
       </div>
     </section>
