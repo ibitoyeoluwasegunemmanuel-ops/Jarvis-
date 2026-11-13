@@ -179,6 +179,7 @@ export default function App() {
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
+  const [updatingProjectId, setUpdatingProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -301,6 +302,31 @@ export default function App() {
       cancelled = true;
     };
   }, [authStatus?.authenticated]);
+
+  const changeProjectStatus = async (projectId: string, status: Project["status"]) => {
+    setUpdatingProjectId(projectId);
+    setProjectError("");
+    try {
+      const updated = await invoke<Project>("update_project_status", {
+        projectId,
+        status
+      });
+      setProjects(current => current.map(item => item.id === updated.id ? updated : item));
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current
+          ? { ...current, authenticated: false }
+          : current
+        );
+        setProjectError("Your owner session expired. Sign in again to update this project.");
+      } else {
+        setProjectError("JARVIS could not update this project status.");
+      }
+    } finally {
+      setUpdatingProjectId(null);
+    }
+  };
 
   const submitProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -444,7 +470,20 @@ export default function App() {
                           <span>{project.description || "No description added yet."}</span>
                           <small>Updated {new Date(project.updated_at * 1000).toLocaleDateString()}</small>
                         </div>
-                        <span className={`project-status ${project.status}`}>{project.status}</span>
+                        <select
+                          className={`project-status-select ${project.status}`}
+                          aria-label={`Status for ${project.name}`}
+                          value={project.status}
+                          disabled={updatingProjectId === project.id}
+                          onChange={event => changeProjectStatus(
+                            project.id,
+                            event.target.value as Project["status"]
+                          )}
+                        >
+                          <option value="active">Active</option>
+                          <option value="paused">Paused</option>
+                          <option value="completed">Completed</option>
+                        </select>
                       </div>
                     ))}
                   </div>
