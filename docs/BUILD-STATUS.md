@@ -29,18 +29,18 @@ The repository contains the baseline product specifications, desktop web workspa
 
 ## Validation status
 - GitHub Actions run #4 (commit `c232f06`): desktop dependency installation, TypeScript typecheck, and production build passed. Gateway package installation passed; Ruff failed and pytest was skipped.
-- Follow-up run #5 (commit `36ccfe2`): desktop checks passed; Ruff still failed. The workflow now emits GitHub-format lint diagnostics and runs pytest independently even if lint fails. Awaiting validation of the newer commits.
-- No successful end-to-end gateway test result has yet been confirmed.
+- Follow-up run #5 (commit `36ccfe2`): desktop checks passed; Ruff still failed. The workflow was updated to emit GitHub-format lint diagnostics and run pytest independently even if lint fails.
+- Run #6 (`43510250466`, commit `f7075b2`): desktop typecheck/build passed; gateway package installation passed; pytest passed (10 tests). Ruff identified two deprecated `FrozenSet` annotations and one unsorted import block. Those three lint findings have now been corrected in `main`; a fresh CI run is pending.
 - No native Windows/Tauri build has been run.
 
 The policy module is a decision helper, not a complete security boundary. The SQL migration intentionally leaves RLS disabled until trusted workspace membership and authentication are implemented. Do not expose these tables to anonymous clients.
 
 ## Next integrated engineering targets
-1. Resolve the Ruff findings and confirm gateway tests pass.
-2. Establish Tauri 2 shell and secure local gateway lifecycle.
-3. Add authenticated local session boundary before any project writes.
+1. Confirm the lint corrections with a fresh CI run.
+2. Establish the Tauri 2 shell and secure local gateway lifecycle.
+3. Add an authenticated local session boundary before any project writes.
 4. Implement trusted workspace membership, database access, RLS policies, and append-only audit records.
 5. Implement approval issuance and single-use consumption bound to exact action arguments.
-6. Add orchestration and specialist registry using shared contracts.
+6. Add orchestration and a specialist registry using shared contracts.
 7. Connect workspace status to real gateway and project state.
 8. Add tests for permissions, cancellation, and evidence-backed verification.
