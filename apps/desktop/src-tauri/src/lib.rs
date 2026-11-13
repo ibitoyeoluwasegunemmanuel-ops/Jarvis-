@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::Duration;
 
 use tauri::{Manager, RunEvent};
 use tauri_plugin_shell::{
@@ -7,31 +8,68 @@ use tauri_plugin_shell::{
 };
 use uuid::Uuid;
 
+const GATEWAY_CAPABILITIES_URL: &str =
+    "http://127.0.0.1:8765/v1/system/capabilities";
+
 struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
+    session_token: String,
 }
 
 fn new_session_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
+/// Fetches the one approved read-only gateway resource through native HTTP.
+///
+/// The webview never receives the process session token and cannot choose a URL,
+/// method, or request headers. Extend this bridge with separately reviewed,
+/// typed commands rather than exposing a generic proxy.
+#[tauri::command]
+async fn get_gateway_capabilities(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|_| "native_gateway_client_unavailable".to_string())?;
+
+    let response = client
+        .get(GATEWAY_CAPABILITIES_URL)
+        .header("X-Jarvis-Session", &runtime.session_token)
+        .send()
+        .await
+        .map_err(|_| "gateway_not_ready".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "gateway_request_failed_{}",
+            response.status().as_u16()
+        ));
+    }
+
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "gateway_response_invalid".to_string())
+}
+
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
 ///
-/// The session token is generated in native code and passed only to the gateway
-/// process environment. It is never returned to the webview or logged.
+/// The session token is generated in native code, passed only to the gateway
+/// process environment, and retained only in native managed state for the
+/// fixed typed request bridge above.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![get_gateway_capabilities])
         .setup(|app| {
             let token = new_session_token();
-            let child = match app
-                .shell()
-                .sidecar("jarvis-gateway")
-            {
+            let child = match app.shell().sidecar("jarvis-gateway") {
                 Ok(command) => match command
                     .args(["--host", "127.0.0.1", "--port", "8765"])
-                    .env("JARVIS_SESSION_TOKEN", token)
+                    .env("JARVIS_SESSION_TOKEN", token.clone())
                     .set_process_group(true)
                     .kill_on_drop(true)
                     .spawn()
@@ -60,6 +98,7 @@ pub fn run() {
 
             app.manage(GatewayRuntime {
                 child: Mutex::new(child),
+                session_token: token,
             });
             Ok(())
         })
