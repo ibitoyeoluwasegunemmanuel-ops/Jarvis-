@@ -5,7 +5,6 @@ import {
   AudioLines,
   BrainCircuit,
   ChevronRight,
-  CircleHelp,
   Command,
   FolderKanban,
   LayoutDashboard,
