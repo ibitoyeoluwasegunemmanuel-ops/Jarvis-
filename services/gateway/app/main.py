@@ -1,7 +1,7 @@
 import os
 import secrets
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from app.owner_auth import (
     revoke_owner_session,
     setup_owner,
 )
+from app.workspace_store import create_project, get_project, list_projects
 
 MIN_SESSION_TOKEN_LENGTH = 32
 
@@ -154,4 +155,45 @@ def owner_auth_logout(request: Request) -> dict[str, bool]:
     if not token or not revoke_owner_session(token):
         raise HTTPException(status_code=401, detail="owner_session_invalid")
     return {"revoked": True}
+
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+
+
+def require_owner_session(request: Request) -> None:
+    """Require a valid owner session in addition to the gateway process token."""
+    token = request.headers.get("X-Jarvis-Owner-Session")
+    if not owner_session_is_valid(token):
+        raise HTTPException(status_code=401, detail="valid_owner_session_required")
+
+
+@app.get("/v1/projects", tags=["projects"])
+def projects_list(_: None = Depends(require_owner_session)) -> list[dict[str, object]]:
+    """List projects belonging to the authenticated local owner."""
+    return list_projects()
+
+
+@app.post("/v1/projects", tags=["projects"], status_code=201)
+def project_create(
+    payload: ProjectCreateRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Create a local project for the authenticated owner."""
+    try:
+        return create_project(payload.name, payload.description)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/v1/projects/{project_id}", tags=["projects"])
+def project_read(
+    project_id: str,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Read one project belonging to the authenticated local owner."""
+    project = get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return project
 
