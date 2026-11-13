@@ -84,8 +84,9 @@ def test_protected_endpoint_fails_closed_when_session_is_not_configured(monkeypa
     assert response.json()["detail"] == "gateway_session_not_configured"
 
 
-def test_capabilities_endpoint_requires_session_and_reports_unbuilt_features(monkeypatch):
+def test_capabilities_endpoint_requires_session_and_reports_unbuilt_features(monkeypatch, tmp_path):
     token = "jarvis-test-session-token-" + ("x" * 40)
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("JARVIS_SESSION_TOKEN", token)
     response = client.get(
         "/v1/system/capabilities",
@@ -101,6 +102,7 @@ def test_capabilities_endpoint_requires_session_and_reports_unbuilt_features(mon
     assert capabilities["persistent_memory"] is False
     assert security["gateway_session_configured"] is True
     assert security["owner_authentication_configured"] is False
+    assert security["owner_session_authenticated"] is False
 
 def test_tauri_webview_origin_allows_session_header_preflight():
     response = client.options(
@@ -114,3 +116,146 @@ def test_tauri_webview_origin_allows_session_header_preflight():
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://tauri.localhost"
     assert "x-jarvis-session" in response.headers["access-control-allow-headers"].lower()
+
+def _process_headers(token="test-gateway-session-" + ("g" * 40)):
+    return {"X-Jarvis-Session": token}
+
+
+def test_owner_setup_creates_single_account_and_native_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "test-gateway-session-" + ("g" * 40))
+    headers = _process_headers()
+
+    status = client.get("/v1/auth/status", headers=headers)
+    assert status.status_code == 200
+    assert status.json() == {
+        "owner_configured": False,
+        "setup_required": True,
+        "authenticated": False,
+    }
+
+    response = client.post(
+        "/v1/auth/setup",
+        headers=headers,
+        json={"password": "correct-horse-battery-7"},
+    )
+    assert response.status_code == 200
+    session_token = response.json()["owner_session_token"]
+    assert len(session_token) >= 40
+
+    authenticated = client.get(
+        "/v1/auth/status",
+        headers={**headers, "X-Jarvis-Owner-Session": session_token},
+    )
+    assert authenticated.status_code == 200
+    assert authenticated.json()["authenticated"] is True
+
+    second_setup = client.post(
+        "/v1/auth/setup",
+        headers=headers,
+        json={"password": "another-valid-password-9"},
+    )
+    assert second_setup.status_code == 409
+
+
+def test_owner_login_rejects_wrong_password_and_accepts_correct_password(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "test-gateway-session-" + ("g" * 40))
+    headers = _process_headers()
+    password = "correct-horse-battery-7"
+
+    setup = client.post("/v1/auth/setup", headers=headers, json={"password": password})
+    assert setup.status_code == 200
+
+    invalid = client.post(
+        "/v1/auth/login",
+        headers=headers,
+        json={"password": "incorrect-password-8"},
+    )
+    assert invalid.status_code == 401
+
+    login = client.post(
+        "/v1/auth/login",
+        headers=headers,
+        json={"password": password},
+    )
+    assert login.status_code == 200
+    token = login.json()["owner_session_token"]
+    status = client.get(
+        "/v1/auth/status",
+        headers={**headers, "X-Jarvis-Owner-Session": token},
+    )
+    assert status.json()["authenticated"] is True
+
+
+def test_owner_login_is_rate_limited_after_five_failures(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "test-gateway-session-" + ("g" * 40))
+    headers = _process_headers()
+    setup = client.post(
+        "/v1/auth/setup",
+        headers=headers,
+        json={"password": "correct-horse-battery-7"},
+    )
+    assert setup.status_code == 200
+
+    for _ in range(5):
+        failed = client.post(
+            "/v1/auth/login",
+            headers=headers,
+            json={"password": "wrong-password-attempt-9"},
+        )
+        assert failed.status_code == 401
+
+    limited = client.post(
+        "/v1/auth/login",
+        headers=headers,
+        json={"password": "correct-horse-battery-7"},
+    )
+    assert limited.status_code == 429
+
+
+def test_owner_logout_revokes_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "test-gateway-session-" + ("g" * 40))
+    headers = _process_headers()
+    setup = client.post(
+        "/v1/auth/setup",
+        headers=headers,
+        json={"password": "correct-horse-battery-7"},
+    )
+    token = setup.json()["owner_session_token"]
+
+    logout = client.post(
+        "/v1/auth/logout",
+        headers={**headers, "X-Jarvis-Owner-Session": token},
+    )
+    assert logout.status_code == 200
+    assert logout.json()["revoked"] is True
+
+    status = client.get(
+        "/v1/auth/status",
+        headers={**headers, "X-Jarvis-Owner-Session": token},
+    )
+    assert status.json()["authenticated"] is False
+
+
+def test_owner_auth_endpoints_still_require_gateway_process_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "test-gateway-session-" + ("g" * 40))
+    response = client.get("/v1/auth/status")
+    assert response.status_code == 401
+
+
+def test_owner_password_must_meet_minimum_length(monkeypatch, tmp_path):
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", "test-gateway-session-" + ("g" * 40))
+    response = client.post(
+        "/v1/auth/setup",
+        headers=_process_headers(),
+        json={"password": "short"},
+    )
+    assert response.status_code == 422
+
