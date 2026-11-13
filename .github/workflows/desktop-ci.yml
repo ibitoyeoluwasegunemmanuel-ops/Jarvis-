@@ -111,14 +111,50 @@ jobs:
             }
             if (-not $denied) { throw "Protected capabilities endpoint accepted a missing token" }
             $headers = @{ "X-Jarvis-Session" = $token }
+            $dataDirectory = Join-Path $env:RUNNER_TEMP "jarvis-owner-auth-smoke"
+            New-Item -ItemType Directory -Force $dataDirectory | Out-Null
+            $env:JARVIS_DATA_DIR = $dataDirectory
+
             $capabilities = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/system/capabilities" -Headers $headers -TimeoutSec 3
             if ($capabilities.security.gateway_session_configured -ne $true) {
               throw "Packaged gateway did not confirm its session configuration"
             }
-            Write-Host "Packaged gateway health and session checks passed"
+
+            $setupPassword = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(36)) + "Aa7!"
+            $setupBody = @{ password = $setupPassword } | ConvertTo-Json -Compress
+            $setup = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/setup" -Headers $headers -ContentType "application/json" -Body $setupBody -TimeoutSec 10
+            if ([string]::IsNullOrWhiteSpace($setup.owner_session_token)) {
+              throw "Packaged owner setup did not return a native session token"
+            }
+
+            $ownerHeaders = @{ "X-Jarvis-Session" = $token; "X-Jarvis-Owner-Session" = $setup.owner_session_token }
+            $ownerStatus = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/auth/status" -Headers $ownerHeaders -TimeoutSec 5
+            if ($ownerStatus.authenticated -ne $true -or $ownerStatus.setup_required -ne $false) {
+              throw "Packaged owner setup did not authenticate the new account"
+            }
+
+            $loginBody = @{ password = $setupPassword } | ConvertTo-Json -Compress
+            $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/login" -Headers $headers -ContentType "application/json" -Body $loginBody -TimeoutSec 10
+            $loginHeaders = @{ "X-Jarvis-Session" = $token; "X-Jarvis-Owner-Session" = $login.owner_session_token }
+            $verifiedCapabilities = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/system/capabilities" -Headers $loginHeaders -TimeoutSec 5
+            if ($verifiedCapabilities.security.owner_session_authenticated -ne $true) {
+              throw "Packaged owner login did not create a valid owner session"
+            }
+
+            Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/logout" -Headers $loginHeaders -TimeoutSec 5 | Out-Null
+            $afterLogout = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/auth/status" -Headers $loginHeaders -TimeoutSec 5
+            if ($afterLogout.authenticated -ne $false) {
+              throw "Packaged owner logout did not revoke the session"
+            }
+
+            Write-Host "Packaged gateway health, transport session, owner setup/login/logout checks passed"
           } finally {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
             Remove-Item Env:JARVIS_SESSION_TOKEN -ErrorAction SilentlyContinue
+            Remove-Item Env:JARVIS_DATA_DIR -ErrorAction SilentlyContinue
+            if ($dataDirectory -and (Test-Path $dataDirectory)) {
+              Remove-Item -Path $dataDirectory -Recurse -Force
+            }
           }
       - name: Build Windows NSIS installer
         run: |
