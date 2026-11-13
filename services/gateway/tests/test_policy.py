@@ -1,4 +1,7 @@
 import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
 
 from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
 
@@ -42,10 +45,6 @@ def test_incomplete_target_is_denied(actor):
 def test_reversible_scoped_action_is_allowed(actor):
     assert evaluate(actor, request(tier=RiskTier.REVERSIBLE, scope="files:write")).decision == Decision.ALLOW
 
-
-from fastapi.testclient import TestClient
-
-from app.main import app
 
 client = TestClient(app)
 
