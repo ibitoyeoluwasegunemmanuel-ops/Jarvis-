@@ -5,7 +5,6 @@ any approval to the exact action, arguments, actor, and expiry before execution.
 """
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import FrozenSet
 
 
 class RiskTier(StrEnum):
@@ -25,7 +24,7 @@ class Decision(StrEnum):
 class ActorContext:
     actor_id: str | None
     workspace_id: str | None
-    granted_scopes: FrozenSet[str] = frozenset()
+    granted_scopes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
