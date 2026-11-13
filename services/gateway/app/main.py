@@ -1,9 +1,22 @@
 import os
 import secrets
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from app.owner_auth import (
+    InvalidOwnerCredentials,
+    OwnerAlreadyConfigured,
+    OwnerLoginRateLimited,
+    OwnerNotConfigured,
+    login_owner,
+    owner_is_configured,
+    owner_session_is_valid,
+    revoke_owner_session,
+    setup_owner,
+)
 
 MIN_SESSION_TOKEN_LENGTH = 32
 
@@ -66,6 +79,7 @@ async def capabilities() -> dict[str, object]:
     session_configured = (
         len(os.environ.get("JARVIS_SESSION_TOKEN", "")) >= MIN_SESSION_TOKEN_LENGTH
     )
+    owner_session = request.headers.get("X-Jarvis-Owner-Session")
     return {
         "service": "jarvis-gateway",
         "api_version": "v1",
@@ -83,6 +97,61 @@ async def capabilities() -> dict[str, object]:
             "default_policy": "deny_without_identity_and_scope",
             "external_side_effects_require_approval": True,
             "gateway_session_configured": session_configured,
-            "owner_authentication_configured": False,
+            "owner_authentication_configured": owner_is_configured(),
+            "owner_session_authenticated": owner_session_is_valid(owner_session),
         },
     }
+
+class OwnerPasswordRequest(BaseModel):
+    password: str = Field(min_length=12, max_length=256)
+
+
+@app.get("/v1/auth/status", tags=["authentication"])
+def owner_auth_status(request: Request) -> dict[str, bool]:
+    """Return setup and session state without exposing credential material."""
+    token = request.headers.get("X-Jarvis-Owner-Session")
+    configured = owner_is_configured()
+    authenticated = owner_session_is_valid(token)
+    return {
+        "owner_configured": configured,
+        "setup_required": not configured,
+        "authenticated": authenticated,
+    }
+
+
+@app.post("/v1/auth/setup", tags=["authentication"])
+def owner_auth_setup(payload: OwnerPasswordRequest) -> dict[str, str]:
+    """Create the single local owner account on first run."""
+    try:
+        token = setup_owner(payload.password)
+    except OwnerAlreadyConfigured as error:
+        raise HTTPException(status_code=409, detail="owner_already_configured") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"owner_session_token": token, "display_name": "Owner"}
+
+
+@app.post("/v1/auth/login", tags=["authentication"])
+def owner_auth_login(payload: OwnerPasswordRequest) -> dict[str, str]:
+    """Authenticate the local owner and issue a short-lived native session."""
+    try:
+        token = login_owner(payload.password)
+    except OwnerNotConfigured as error:
+        raise HTTPException(status_code=409, detail="owner_setup_required") from error
+    except InvalidOwnerCredentials as error:
+        raise HTTPException(status_code=401, detail="invalid_owner_credentials") from error
+    except OwnerLoginRateLimited as error:
+        raise HTTPException(status_code=429, detail="owner_login_temporarily_locked") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"owner_session_token": token, "display_name": "Owner"}
+
+
+@app.post("/v1/auth/logout", tags=["authentication"])
+def owner_auth_logout(request: Request) -> dict[str, bool]:
+    """Revoke the current native owner session."""
+    token = request.headers.get("X-Jarvis-Owner-Session")
+    if not token or not revoke_owner_session(token):
+        raise HTTPException(status_code=401, detail="owner_session_invalid")
+    return {"revoked": True}
+
