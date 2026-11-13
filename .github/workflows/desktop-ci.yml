@@ -51,4 +51,6 @@ jobs:
       - run: python -m pip install --upgrade pip setuptools wheel
       - run: python -m pip install -e ".[dev]"
       - run: ruff check app tests --output-format=github
-      - run: pytest -q
+      - name: Run gateway tests even when lint reports issues
+        if: always()
+        run: pytest -q
