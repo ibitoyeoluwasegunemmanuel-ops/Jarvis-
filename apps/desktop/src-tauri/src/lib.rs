@@ -16,6 +16,7 @@ const GATEWAY_AUTH_STATUS_PATH: &str = "/v1/auth/status";
 const GATEWAY_AUTH_SETUP_PATH: &str = "/v1/auth/setup";
 const GATEWAY_AUTH_LOGIN_PATH: &str = "/v1/auth/login";
 const GATEWAY_AUTH_LOGOUT_PATH: &str = "/v1/auth/logout";
+const GATEWAY_PROJECTS_PATH: &str = "/v1/projects";
 
 struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
@@ -40,6 +41,23 @@ struct OwnerAuthStatus {
     owner_configured: bool,
     setup_required: bool,
     authenticated: bool,
+}
+
+
+#[derive(Deserialize, Serialize)]
+struct ProjectRecord {
+    id: String,
+    name: String,
+    description: String,
+    status: String,
+    created_at: f64,
+    updated_at: f64,
+}
+
+#[derive(Serialize)]
+struct ProjectCreatePayload<'a> {
+    name: &'a str,
+    description: &'a str,
 }
 
 fn new_session_token() -> String {
@@ -260,6 +278,98 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
     result
 }
 
+
+/// Lists projects through the authenticated native bridge. The owner token is
+/// required and is attached in Rust; it is never sent to the webview.
+#[tauri::command]
+async fn list_projects(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ProjectRecord>, String> {
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let response = client
+            .get(gateway_url(GATEWAY_PROJECTS_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_list_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<Vec<ProjectRecord>>()
+            .await
+            .map_err(|_| "project_list_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Creates a local project for the signed-in owner. The owner identity is
+/// resolved by the gateway from the native session, never from JS arguments.
+#[tauri::command]
+async fn create_project(
+    name: String,
+    description: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectRecord, String> {
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let response = client
+            .post(gateway_url(GATEWAY_PROJECTS_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectCreatePayload {
+                name: &name,
+                description: &description,
+            })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_details_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_create_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectRecord>()
+            .await
+            .map_err(|_| "project_create_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
 ///
 /// The process token is generated in native code and passed only to the gateway
@@ -274,7 +384,9 @@ pub fn run() {
             get_owner_auth_status,
             setup_owner,
             login_owner,
-            logout_owner
+            logout_owner,
+            list_projects,
+            create_project
         ])
         .setup(|app| {
             let token = new_session_token();
