@@ -22,3 +22,26 @@ app.add_middleware(
 async def health() -> dict[str, str]:
     """Liveness endpoint; does not expose secrets or internal configuration."""
     return {"status": "ok", "service": "jarvis-gateway", "version": app.version}
+
+
+@app.get("/v1/system/capabilities", tags=["system"])
+async def capabilities() -> dict[str, object]:
+    """Report implemented gateway capabilities without implying unavailable features."""
+    return {
+        "service": "jarvis-gateway",
+        "api_version": "v1",
+        "capabilities": {
+            "health_check": True,
+            "authorization_policy": True,
+            "project_persistence": False,
+            "agent_execution": False,
+            "computer_use": False,
+            "voice": False,
+            "persistent_memory": False,
+        },
+        "security": {
+            "default_policy": "deny_without_identity_and_scope",
+            "external_side_effects_require_approval": True,
+            "production_authentication_configured": False,
+        },
+    }
