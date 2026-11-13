@@ -132,6 +132,16 @@ jobs:
               throw "Packaged owner setup did not authenticate the new account"
             }
 
+            $projectBody = @{ name = "CI Smoke Project"; description = "Packaged owner-scoped persistence test" } | ConvertTo-Json -Compress
+            $project = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/projects" -Headers $ownerHeaders -ContentType "application/json" -Body $projectBody -TimeoutSec 5
+            if ($project.name -ne "CI Smoke Project") {
+              throw "Packaged gateway did not create an owner project"
+            }
+            $projectList = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/projects" -Headers $ownerHeaders -TimeoutSec 5
+            if ($projectList.Count -lt 1 -or $projectList[0].id -ne $project.id) {
+              throw "Packaged gateway did not persist the owner project"
+            }
+
             $loginBody = @{ password = $setupPassword } | ConvertTo-Json -Compress
             $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/login" -Headers $headers -ContentType "application/json" -Body $loginBody -TimeoutSec 10
             $loginHeaders = @{ "X-Jarvis-Session" = $token; "X-Jarvis-Owner-Session" = $login.owner_session_token }
