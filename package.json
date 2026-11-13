@@ -6,7 +6,12 @@
   "scripts": {
     "dev:desktop": "pnpm --filter @jarvis/desktop dev",
     "build:desktop": "pnpm --filter @jarvis/desktop build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "dev:app": "pnpm --filter @jarvis/desktop tauri:dev",
+    "build:app": "pnpm --filter @jarvis/desktop tauri:build"
   },
-  "engines": { "node": ">=20.0.0", "pnpm": ">=9.0.0" }
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
 }
