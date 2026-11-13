@@ -1,16 +1,30 @@
 # JARVIS Gateway
 
-Local development API boundary. The current implementation exposes a non-sensitive liveness endpoint only; it does not yet execute tools, access files, or call model providers.
+FastAPI service for the private JARVIS desktop environment.
 
-## Run locally
+## Development
+
 ```bash
 python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
 pip install -e ".[dev]"
-uvicorn app.main:app --host 127.0.0.1 --port 8765 --reload
+uvicorn app.main:app --reload --port 8000
 ```
 
-Health: http://127.0.0.1:8765/health
+Health endpoint: `GET /health`.
 
-Do not bind the local operator to 0.0.0.0. Production CORS, authentication, and IPC security require explicit configuration before exposing additional routes.
+## Security foundation
+
+- `app.policy.evaluate` is a fail-closed decision function; it does not execute tools.
+- Read-only and reversible actions may be allowed only when identity, workspace, target, and required scope are present.
+- External side effects and high-impact actions require a separate explicit approval flow.
+- Cross-workspace requests are denied by default.
+- Approval must be bound to the exact action and arguments, expire, and be consumed once by the eventual executor.
+
+## Database
+
+Apply migrations in `migrations/` using a privileged migration role. The initial schema intentionally does not enable RLS until a trusted membership/identity model is implemented. Never expose these tables to anonymous clients or treat a caller-supplied workspace ID as proof of access.
+
+## Current limitations
+
+The gateway does not yet authenticate users, persist sessions, execute tools, call model providers, or implement approval consumption. The policy module is an early guardrail, not a complete security boundary.
