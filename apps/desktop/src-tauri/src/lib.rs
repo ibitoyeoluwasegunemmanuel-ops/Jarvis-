@@ -60,6 +60,11 @@ struct ProjectCreatePayload<'a> {
     description: &'a str,
 }
 
+#[derive(Serialize)]
+struct ProjectStatusPayload<'a> {
+    status: &'a str,
+}
+
 fn new_session_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
@@ -370,6 +375,68 @@ async fn create_project(
     result
 }
 
+
+/// Updates a project's status through a typed native request. Only known status
+/// values are accepted by the gateway, which appends an audit event per change.
+#[tauri::command]
+async fn update_project_status(
+    project_id: String,
+    status: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectRecord, String> {
+    if !["active", "paused", "completed"].contains(&status.as_str()) {
+        return Err("project_status_invalid".to_string());
+    }
+    if project_id.is_empty() || project_id.len() > 64 {
+        return Err("project_id_invalid".to_string());
+    }
+
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!(
+            "{}/status",
+            gateway_url(&format!("{GATEWAY_PROJECTS_PATH}/{project_id}"))
+        );
+        let response = client
+            .patch(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectStatusPayload { status: &status })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_status_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_status_update_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectRecord>()
+            .await
+            .map_err(|_| "project_status_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
 ///
 /// The process token is generated in native code and passed only to the gateway
@@ -386,7 +453,8 @@ pub fn run() {
             login_owner,
             logout_owner,
             list_projects,
-            create_project
+            create_project,
+            update_project_status
         ])
         .setup(|app| {
             let token = new_session_token();
