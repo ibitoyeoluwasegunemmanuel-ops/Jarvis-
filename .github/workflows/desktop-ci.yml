@@ -88,6 +88,44 @@ jobs:
           python -m PyInstaller --clean --noconfirm --onefile --name jarvis-gateway --collect-all fastapi --collect-all starlette --collect-all uvicorn services/gateway/entrypoint.py
           New-Item -ItemType Directory -Force apps/desktop/src-tauri/binaries | Out-Null
           Copy-Item dist/jarvis-gateway.exe apps/desktop/src-tauri/binaries/jarvis-gateway-x86_64-pc-windows-msvc.exe
+      - name: Smoke-test packaged gateway authentication
+        shell: pwsh
+        run: |
+          $token = [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+          $env:JARVIS_SESSION_TOKEN = $token
+          $binary = Resolve-Path apps/desktop/src-tauri/binaries/jarvis-gateway-x86_64-pc-windows-msvc.exe
+          $process = Start-Process -FilePath $binary -ArgumentList @("--host", "127.0.0.1", "--port", "8765") -PassThru -WindowStyle Hidden
+          try {
+            $health = $null
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:8765/health" -TimeoutSec 2
+                break
+              } catch {
+                Start-Sleep -Milliseconds 300
+              }
+            }
+            if ($null -eq $health -or $health.service -ne "jarvis-gateway") {
+              throw "Packaged gateway did not become healthy"
+            }
+            $denied = $false
+            try {
+              Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/system/capabilities" -TimeoutSec 3 | Out-Null
+            } catch {
+              if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw }
+              $denied = $true
+            }
+            if (-not $denied) { throw "Protected capabilities endpoint accepted a missing token" }
+            $headers = @{ "X-Jarvis-Session" = $token }
+            $capabilities = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/system/capabilities" -Headers $headers -TimeoutSec 3
+            if ($capabilities.security.gateway_session_configured -ne $true) {
+              throw "Packaged gateway did not confirm its session configuration"
+            }
+            Write-Host "Packaged gateway health and session checks passed"
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            Remove-Item Env:JARVIS_SESSION_TOKEN -ErrorAction SilentlyContinue
+          }
       - name: Build Windows NSIS installer
         run: |
           choco install nsis --no-progress -y
