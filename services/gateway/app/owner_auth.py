@@ -159,7 +159,7 @@ def setup_owner(password: str) -> str:
     _validate_password(password)
     now = time.time()
     password_hash = _PASSWORD_HASHER.hash(password)
-    connection = _connect()
+    connection = connect_database()
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = connection.execute("SELECT 1 FROM owner_account WHERE id = 1").fetchone()
@@ -185,7 +185,7 @@ def setup_owner(password: str) -> str:
 
 def login_owner(password: str) -> str:
     _validate_password(password)
-    connection = _connect()
+    connection = connect_database()
     try:
         connection.execute("BEGIN IMMEDIATE")
         now = time.time()
@@ -245,7 +245,7 @@ def owner_session_is_valid(token: str | None) -> bool:
     if not token or len(token) > 512:
         return False
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    connection = _connect()
+    connection = connect_database()
     try:
         row = connection.execute(
             "SELECT 1 FROM owner_sessions "
@@ -261,7 +261,7 @@ def revoke_owner_session(token: str | None) -> bool:
     if not token or len(token) > 512:
         return False
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    connection = _connect()
+    connection = connect_database()
     try:
         cursor = connection.execute(
             "UPDATE owner_sessions SET revoked_at = ? "
