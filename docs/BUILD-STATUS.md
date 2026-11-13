@@ -38,7 +38,7 @@ The repository contains the product specifications, native Windows desktop found
 - Run #56 (`43521393108`): desktop typecheck/build and gateway lint/tests passed after the first owner-auth screen was added.
 - Run #71 (`43522774981`, commit `672326cae6`): desktop typecheck/build passed; Ruff passed; **25 gateway tests passed**. This includes the owner-auth and project persistence tests.
 - The Windows native job for run #71 is still validating the Rust project bridge and sidecar packaging.
-- Run #72 (`43522883502`) adds a Windows packaged-gateway smoke test for owner setup, login, logout, and project create/list. It is queued at the time of this update.
+- Run #72 (`43522883502`) has passed its Windows packaged-gateway smoke test: transport token, owner setup/login/logout, and project create/list all passed against the PyInstaller sidecar. The same run has compiled the native desktop and is currently building the NSIS installer; artifact upload is pending.
 - Earlier project-layer runs failed because four references still used the renamed `_connect` helper. Those references have now been corrected; run #71 confirms the gateway suite passes.
 - CI still installs with `--no-frozen-lockfile`. A generated pnpm lockfile is available as an artifact but is not committed to the repository.
 
