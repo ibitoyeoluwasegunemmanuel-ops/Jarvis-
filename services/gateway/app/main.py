@@ -41,7 +41,13 @@ async def require_local_session(request: Request, call_next):
 # Local development origins only. Production origins must be explicit and configured.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:1420", "http://localhost:1420"],
+    allow_origins=[
+        "http://127.0.0.1:1420",
+        "http://localhost:1420",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+    ],
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["Content-Type", "X-Jarvis-Session"],
