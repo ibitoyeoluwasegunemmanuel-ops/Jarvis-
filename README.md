@@ -57,10 +57,10 @@ Build the desktop interface:
 pnpm build:desktop
 ```
 
-The native Windows shell is checked in GitHub Actions. Windows bundling remains disabled until installer branding, signing, and release configuration are ready.
+The native Windows shell is compiled in GitHub Actions, and a standalone Windows x64 executable is published as a build artifact. A signed installer is not available yet.
 
 ## Current status
-The repository now contains the product and security specifications, a React desktop workspace, a FastAPI gateway foundation, automated tests, and a Tauri 2 native-shell scaffold. The native Windows compile is under CI validation. No production agent execution, voice, persistent memory, computer-use tools, or deployed service is claimed yet.
+The repository contains the product and security specifications, a React desktop workspace, a FastAPI gateway foundation, automated tests, and a Tauri 2 native shell. A Windows x64 executable has been built in CI. The gateway now enforces a local session-token header on protected routes, but the desktop does not yet provision that token or launch the gateway. No production agent execution, voice, persistent memory, or computer-use tools are claimed yet.
 
 ## Safety boundary
 JARVIS is an authorized personal productivity and engineering assistant. It must not perform covert recording, unauthorized access, credential theft, malware deployment, evasion, or surveillance of targeted private individuals. Security testing is limited to systems the user owns or is explicitly authorized to assess.
