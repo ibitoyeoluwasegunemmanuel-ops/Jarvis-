@@ -81,13 +81,7 @@ jobs:
           if-no-files-found: error
       - name: Build packaged gateway sidecar
         shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .\services\gateway pyinstaller
-          $env:PYTHONPATH = "$PWD\services\gateway"
-          python -m PyInstaller --clean --noconfirm --onefile --name jarvis-gateway --collect-all fastapi --collect-all starlette --collect-all uvicorn services/gateway/entrypoint.py
-          New-Item -ItemType Directory -Force apps/desktop/src-tauri/binaries | Out-Null
-          Copy-Item dist/jarvis-gateway.exe apps/desktop/src-tauri/binaries/jarvis-gateway-x86_64-pc-windows-msvc.exe
+        run: .\scripts\build-gateway-sidecar.ps1
       - name: Smoke-test packaged gateway authentication
         shell: pwsh
         run: |
