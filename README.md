@@ -20,6 +20,7 @@ JARVIS is designed as a persistent, multimodal, voice-first AI system with a rea
 - [Security and threat model](docs/SECURITY-THREAT-MODEL.md)
 - [Engineering standards](docs/ENGINEERING-STANDARDS.md)
 - [Integrated delivery plan](docs/INTEGRATED-DELIVERY-PLAN.md)
+- [Desktop runtime](docs/DESKTOP-RUNTIME.md)
 
 ## Proposed technical direction
 - Desktop: Tauri 2 + React + TypeScript
@@ -57,10 +58,10 @@ Build the desktop interface:
 pnpm build:desktop
 ```
 
-The native Windows shell is compiled in GitHub Actions, and a standalone Windows x64 executable is published as a build artifact. A signed installer is not available yet.
+The Windows CI workflow packages the Python gateway as a sidecar and builds an NSIS installer. Local native development also needs the target-specific gateway sidecar under apps/desktop/src-tauri/binaries.
 
 ## Current status
-The repository contains the product and security specifications, a React desktop workspace, a FastAPI gateway foundation, automated tests, and a Tauri 2 native shell. A Windows x64 executable has been built in CI. The gateway now enforces a local session-token header on protected routes, but the desktop does not yet provision that token or launch the gateway. No production agent execution, voice, persistent memory, or computer-use tools are claimed yet.
+The repository contains the product and security specifications, a React desktop workspace, a FastAPI gateway, gateway session-token checks, and a Tauri 2 native shell that starts the gateway sidecar with a fresh process token. The interface monitors gateway health. The Windows sidecar smoke test and NSIS installer are being validated in CI. Voice, persistent project memory, specialist execution, and computer-use tools are not yet implemented.
 
 ## Safety boundary
 JARVIS is an authorized personal productivity and engineering assistant. It must not perform covert recording, unauthorized access, credential theft, malware deployment, evasion, or surveillance of targeted private individuals. Security testing is limited to systems the user owns or is explicitly authorized to assess.
