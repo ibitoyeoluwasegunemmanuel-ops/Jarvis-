@@ -76,36 +76,44 @@ async fn get_gateway_capabilities(
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<serde_json::Value, String> {
     let client = gateway_client()?;
-    let owner_session = runtime
+    let mut owner_session = runtime
         .owner_session
         .lock()
         .map_err(|_| "native_owner_session_unavailable".to_string())?
         .clone();
 
-    let mut request = client
-        .get(gateway_url(GATEWAY_CAPABILITIES_PATH))
-        .header("X-Jarvis-Session", &runtime.session_token);
+    let result = async {
+        let mut request = client
+            .get(gateway_url(GATEWAY_CAPABILITIES_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token);
 
-    if let Some(token) = owner_session {
-        request = request.header("X-Jarvis-Owner-Session", token);
+        if let Some(token) = owner_session.as_ref() {
+            request = request.header("X-Jarvis-Owner-Session", token);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "gateway_request_failed_{}",
+                response.status().as_u16()
+            ));
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| "gateway_response_invalid".to_string())
     }
+    .await;
 
-    let response = request
-        .send()
-        .await
-        .map_err(|_| "gateway_not_ready".to_string())?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "gateway_request_failed_{}",
-            response.status().as_u16()
-        ));
+    if let Some(token) = owner_session.as_mut() {
+        token.zeroize();
     }
-
-    response
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|_| "gateway_response_invalid".to_string())
+    result
 }
 
 /// Reads whether first-run setup is needed and whether the native owner session
@@ -115,36 +123,44 @@ async fn get_owner_auth_status(
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<OwnerAuthStatus, String> {
     let client = gateway_client()?;
-    let owner_session = runtime
+    let mut owner_session = runtime
         .owner_session
         .lock()
         .map_err(|_| "native_owner_session_unavailable".to_string())?
         .clone();
 
-    let mut request = client
-        .get(gateway_url(GATEWAY_AUTH_STATUS_PATH))
-        .header("X-Jarvis-Session", &runtime.session_token);
+    let result = async {
+        let mut request = client
+            .get(gateway_url(GATEWAY_AUTH_STATUS_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token);
 
-    if let Some(token) = owner_session {
-        request = request.header("X-Jarvis-Owner-Session", token);
+        if let Some(token) = owner_session.as_ref() {
+            request = request.header("X-Jarvis-Owner-Session", token);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "owner_status_request_failed_{}",
+                response.status().as_u16()
+            ));
+        }
+
+        response
+            .json::<OwnerAuthStatus>()
+            .await
+            .map_err(|_| "owner_status_response_invalid".to_string())
     }
+    .await;
 
-    let response = request
-        .send()
-        .await
-        .map_err(|_| "gateway_not_ready".to_string())?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "owner_status_request_failed_{}",
-            response.status().as_u16()
-        ));
+    if let Some(token) = owner_session.as_mut() {
+        token.zeroize();
     }
-
-    response
-        .json::<OwnerAuthStatus>()
-        .await
-        .map_err(|_| "owner_status_response_invalid".to_string())
+    result
 }
 
 /// Sends a password to one fixed authentication endpoint and keeps the issued
@@ -216,26 +232,32 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
         .map_err(|_| "native_owner_session_unavailable".to_string())?
         .take();
 
-    let Some(token) = owner_session else {
+    let Some(mut token) = owner_session else {
         return Ok(());
     };
 
-    let client = gateway_client()?;
-    let response = client
-        .post(gateway_url(GATEWAY_AUTH_LOGOUT_PATH))
-        .header("X-Jarvis-Session", &runtime.session_token)
-        .header("X-Jarvis-Owner-Session", token)
-        .send()
-        .await
-        .map_err(|_| "gateway_not_ready".to_string())?;
+    let result = async {
+        let client = gateway_client()?;
+        let response = client
+            .post(gateway_url(GATEWAY_AUTH_LOGOUT_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
 
-    if !response.status().is_success() {
-        return Err(format!(
-            "owner_logout_failed_{}",
-            response.status().as_u16()
-        ));
+        if !response.status().is_success() {
+            return Err(format!(
+                "owner_logout_failed_{}",
+                response.status().as_u16()
+            ));
+        }
+        Ok(())
     }
-    Ok(())
+    .await;
+
+    token.zeroize();
+    result
 }
 
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
@@ -313,4 +335,15 @@ pub fn run() {
             }
         }
     });
+}
+
+impl Drop for GatewayRuntime {
+    fn drop(&mut self) {
+        self.session_token.zeroize();
+        if let Ok(owner_session) = self.owner_session.get_mut() {
+            if let Some(token) = owner_session.as_mut() {
+                token.zeroize();
+            }
+        }
+    }
 }
