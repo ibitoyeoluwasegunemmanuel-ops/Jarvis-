@@ -33,7 +33,8 @@ This is a native application shell, not yet a secure local agent runtime.
 - No filesystem, shell, process, microphone, camera, screen-capture, or browser-automation permissions are exposed to the webview.
 - No Tauri commands are registered.
 - No API credentials are embedded in the frontend.
-- The FastAPI gateway is still a separate process; automatic startup, health supervision, owner authentication, and shutdown handling are not implemented.
+- The FastAPI gateway is still a separate process; automatic startup, health supervision, native token provisioning, owner authentication, and shutdown handling are not implemented.
+- The gateway rejects protected routes unless its process has a JARVIS_SESSION_TOKEN of at least 32 characters and the caller supplies the matching X-Jarvis-Session header. The desktop does not yet possess or inject this secret.
 - The current gateway CORS policy and health endpoint do not authenticate callers. Do not treat loopback binding or CORS as authentication.
 - The app must not be used to run sensitive tasks until the local session boundary and approval enforcement are implemented.
 
