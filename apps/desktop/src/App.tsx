@@ -170,6 +170,7 @@ export default function App() {
     const controller = new AbortController();
     let retryTimer: number | undefined;
     let nativeStatusLoaded = false;
+    let lastNativeStatusCheck = 0;
 
     const checkGateway = async () => {
       try {
@@ -180,7 +181,7 @@ export default function App() {
         setHealth(await response.json() as Health);
         setHealthError(false);
 
-        if (!nativeStatusLoaded) {
+        if (!nativeStatusLoaded || Date.now() - lastNativeStatusCheck >= 60_000) {
           try {
             const result = await invoke<GatewayCapabilities>("get_gateway_capabilities");
             const owner = await invoke<OwnerAuthStatus>("get_owner_auth_status");
@@ -190,11 +191,13 @@ export default function App() {
               setAuthStatus(owner);
               setNativeUnavailable(false);
               nativeStatusLoaded = true;
+              lastNativeStatusCheck = Date.now();
             }
           } catch {
             if (!controller.signal.aborted) {
               setCapabilitiesError(true);
               setNativeUnavailable(true);
+              nativeStatusLoaded = false;
             }
           }
         }
