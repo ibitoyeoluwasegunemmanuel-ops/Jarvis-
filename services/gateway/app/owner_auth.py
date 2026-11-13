@@ -109,6 +109,16 @@ def connect_database() -> sqlite3.Connection:
             details_json TEXT NOT NULL DEFAULT '{}',
             occurred_at REAL NOT NULL
         );
+        CREATE TRIGGER IF NOT EXISTS project_audit_events_no_update
+        BEFORE UPDATE ON project_audit_events
+        BEGIN
+            SELECT RAISE(ABORT, 'project_audit_events_are_append_only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS project_audit_events_no_delete
+        BEFORE DELETE ON project_audit_events
+        BEGIN
+            SELECT RAISE(ABORT, 'project_audit_events_are_append_only');
+        END;
         INSERT OR IGNORE INTO owner_login_state(id, failed_attempts, locked_until)
             VALUES (1, 0, 0);
         """
