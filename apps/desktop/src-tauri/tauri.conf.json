@@ -27,6 +27,8 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "externalBin": ["binaries/jarvis-gateway"],
+    "icon": ["icons/icon.ico"]
   }
 }
