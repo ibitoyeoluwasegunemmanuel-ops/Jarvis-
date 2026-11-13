@@ -100,6 +100,7 @@ def test_capabilities_endpoint_requires_session_and_reports_unbuilt_features(mon
     security = response.json()["security"]
     assert capabilities["health_check"] is True
     assert capabilities["authorization_policy"] is True
+    assert capabilities["project_persistence"] is True
     assert capabilities["gateway_session_authentication"] is True
     assert capabilities["agent_execution"] is False
     assert capabilities["persistent_memory"] is False
