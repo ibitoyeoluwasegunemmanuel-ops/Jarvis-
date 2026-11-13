@@ -87,6 +87,9 @@ jobs:
         run: |
           $token = [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
           $env:JARVIS_SESSION_TOKEN = $token
+          $dataDirectory = Join-Path $env:RUNNER_TEMP "jarvis-owner-auth-smoke"
+          New-Item -ItemType Directory -Force $dataDirectory | Out-Null
+          $env:JARVIS_DATA_DIR = $dataDirectory
           $binary = Resolve-Path apps/desktop/src-tauri/binaries/jarvis-gateway-x86_64-pc-windows-msvc.exe
           $process = Start-Process -FilePath $binary -ArgumentList @("--host", "127.0.0.1", "--port", "8765") -PassThru -WindowStyle Hidden
           try {
@@ -111,10 +114,6 @@ jobs:
             }
             if (-not $denied) { throw "Protected capabilities endpoint accepted a missing token" }
             $headers = @{ "X-Jarvis-Session" = $token }
-            $dataDirectory = Join-Path $env:RUNNER_TEMP "jarvis-owner-auth-smoke"
-            New-Item -ItemType Directory -Force $dataDirectory | Out-Null
-            $env:JARVIS_DATA_DIR = $dataDirectory
-
             $capabilities = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/system/capabilities" -Headers $headers -TimeoutSec 3
             if ($capabilities.security.gateway_session_configured -ne $true) {
               throw "Packaged gateway did not confirm its session configuration"
