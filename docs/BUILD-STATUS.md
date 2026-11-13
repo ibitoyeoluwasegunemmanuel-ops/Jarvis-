@@ -26,7 +26,7 @@ The repository contains the baseline product specifications, desktop web workspa
 - Monitoring workers, notifications, and background scheduling.
 
 ## Validation status
-The new CI workflow run #2 was observed in the queued state; no passing result has been confirmed. The previous desktop-only CI run failed during the pnpm/action-setup step, before dependency installation or project checks ran. Python tests have been added but have not yet been confirmed passing in CI or locally.
+CI run #2 has completed with failure in both jobs. The desktop job failed during pnpm/action-setup, before dependency installation or project checks. The gateway job failed during `pip install -e ".[dev]"`, before Ruff or pytest ran. The earlier desktop-only run also failed during pnpm/action-setup. No successful build or test result has been confirmed. The exact setup/install error messages still need inspection.
 
 The policy module is a decision helper, not a complete security boundary. The SQL migration intentionally leaves RLS disabled until trusted workspace membership and authentication are implemented. Do not expose these tables to anonymous clients.
 
