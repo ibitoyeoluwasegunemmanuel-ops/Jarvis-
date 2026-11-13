@@ -330,6 +330,7 @@ export default function App() {
       } else {
         setProjectError("JARVIS could not save this project. Your draft is still available.");
         setProjectName(name);
+        setProjectDescription(projectDescription);
       }
     } finally {
       setCreatingProject(false);
