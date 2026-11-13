@@ -270,7 +270,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (active !== "Projects" || !authStatus?.authenticated) return;
+    if (!authStatus?.authenticated) return;
 
     let cancelled = false;
     setProjectsLoading(true);
@@ -300,7 +300,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [active, authStatus?.authenticated]);
+  }, [authStatus?.authenticated]);
 
   const submitProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
