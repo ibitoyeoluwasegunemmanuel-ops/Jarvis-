@@ -3,33 +3,39 @@
 Last updated: 2026-11-13
 
 ## Repository state
-The repository now contains the baseline product specifications and the first application scaffold.
+The repository contains the baseline product specifications, desktop web workspace scaffold, gateway foundation, and first security/database foundations.
 
 ### Implemented in source
 - pnpm workspace root and shared package layout.
 - React/Vite desktop workspace shell with navigation and status cards.
 - Local FastAPI gateway with a minimal liveness endpoint.
 - Shared TypeScript contracts for specialist tasks, risk tiers, approvals, and evidence.
-- Desktop CI workflow for type checking and production build.
+- Fail-closed policy decision module covering identity, workspace, scope, target, and risk tier.
+- Policy unit tests covering allow, deny, and approval-required outcomes.
+- Initial PostgreSQL migration for workspaces, projects, tasks, decisions, memory, agent runs, approvals, and audit events.
+- GitHub Actions workflow for desktop typecheck/build and Python lint/tests.
 - Environment template and ignore rules.
 
 ### Not implemented yet
 - Tauri native desktop runtime and Windows installer.
 - Authentication/session security and secure IPC.
 - Realtime voice, avatar rendering, screen/camera sharing.
-- Durable project memory and database migrations.
-- Orchestrator, specialist execution, policy enforcement, and approvals.
+- Database connection, trusted membership model, and production RLS policies.
+- Orchestrator, specialist execution, and actual approval issuance/consumption.
 - Local computer operator, browser/file tools, and integrations.
 - Monitoring workers, notifications, and background scheduling.
 
 ## Validation status
-Source files have been committed to GitHub. A successful local install/build/test has not yet been run in this environment. GitHub Actions is configured to run the desktop typecheck and build when its workflow is triggered. Do not interpret a committed workflow as a passing CI result.
+The new CI workflow run #2 was observed in the queued state; no passing result has been confirmed. The previous desktop-only CI run failed during the pnpm/action-setup step, before dependency installation or project checks ran. Python tests have been added but have not yet been confirmed passing in CI or locally.
+
+The policy module is a decision helper, not a complete security boundary. The SQL migration intentionally leaves RLS disabled until trusted workspace membership and authentication are implemented. Do not expose these tables to anonymous clients.
 
 ## Next integrated engineering targets
-1. Establish Tauri 2 shell and secure local gateway lifecycle.
-2. Add typed API contracts and authenticated local session boundary.
-3. Implement server-side policy evaluation and append-only audit records.
-4. Add PostgreSQL migrations for workspace, project, task, memory, agent, tool, approval, and audit entities.
-5. Add orchestration and specialist registry using shared contracts.
-6. Connect workspace status to real gateway and project state.
-7. Add test suites for permissions, cancellation, and evidence-backed verification.
+1. Diagnose and resolve the pnpm setup failure, then obtain a passing desktop build.
+2. Establish Tauri 2 shell and secure local gateway lifecycle.
+3. Add typed API contracts and authenticated local session boundary.
+4. Implement trusted workspace membership, database access, RLS policies, and append-only audit records.
+5. Implement approval issuance and single-use consumption bound to exact action arguments.
+6. Add orchestration and specialist registry using shared contracts.
+7. Connect workspace status to real gateway and project state.
+8. Add tests for permissions, cancellation, and evidence-backed verification.
