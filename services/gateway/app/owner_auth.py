@@ -62,7 +62,7 @@ def _data_directory() -> Path:
     return base
 
 
-def _connect() -> sqlite3.Connection:
+def connect_database() -> sqlite3.Connection:
     connection = sqlite3.connect(_data_directory() / "owner-auth.sqlite3", timeout=5)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
@@ -87,6 +87,27 @@ def _connect() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY CHECK (id = 1),
             failed_attempts INTEGER NOT NULL DEFAULT 0,
             locked_until REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'paused', 'completed')),
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS projects_owner_updated
+            ON projects(owner_id, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS project_audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
+            event_type TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}',
+            occurred_at REAL NOT NULL
         );
         INSERT OR IGNORE INTO owner_login_state(id, failed_attempts, locked_until)
             VALUES (1, 0, 0);
@@ -116,7 +137,7 @@ def _issue_session(connection: sqlite3.Connection) -> str:
 
 
 def owner_is_configured() -> bool:
-    connection = _connect()
+    connection = connect_database()
     try:
         row = connection.execute("SELECT 1 FROM owner_account WHERE id = 1").fetchone()
         return row is not None
