@@ -78,6 +78,13 @@ jobs:
           if-no-files-found: error
       - name: Build desktop frontend
         run: pnpm --filter @jarvis/desktop build
-      - name: Compile native Tauri shell
-        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Build Windows desktop executable
+        run: cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows-x64-executable
+          path: apps/desktop/src-tauri/target/release/jarvis-desktop.exe
+          if-no-files-found: error
+          retention-days: 30
 
