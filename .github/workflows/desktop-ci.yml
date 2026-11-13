@@ -70,6 +70,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Upload generated pnpm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-pnpm-lockfile
+          path: pnpm-lock.yaml
+          if-no-files-found: error
       - name: Build desktop frontend
         run: pnpm --filter @jarvis/desktop build
       - name: Compile native Tauri shell
