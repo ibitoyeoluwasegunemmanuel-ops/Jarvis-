@@ -18,12 +18,12 @@ The repository contains the baseline product specifications, desktop web workspa
 - Policy unit tests covering allow, deny, and approval-required outcomes.
 - Gateway endpoint tests for liveness and truthful capability reporting.
 - Initial PostgreSQL migration for workspaces, projects, tasks, decisions, memory, agent runs, approvals, and audit events.
-- GitHub Actions workflow for desktop typecheck/build and Python lint/tests.
+- GitHub Actions workflow for desktop typecheck/build, Windows native executable build/artifact, and Python lint/tests.
 - Environment template and ignore rules.
 
 ### Not implemented yet
-- Windows installer and signed release packaging. The Tauri native shell is scaffolded but not yet compiled on Windows.
-- Authentication/session security and secure IPC.
+- Windows installer and signed release packaging. The native Tauri shell and standalone Windows executable are built in CI; no installer is published yet.
+- Owner authentication, secure IPC, native token provisioning, and automatic gateway lifecycle.
 - Realtime voice, avatar rendering, screen/camera sharing.
 - Database connection, trusted membership model, and production RLS policies.
 - Orchestrator, specialist execution, and actual approval issuance/consumption.
@@ -46,8 +46,8 @@ The policy module is a decision helper, not a complete security boundary. The SQ
 ## Next integrated engineering targets
 1. Refresh and commit the generated pnpm lockfile, then switch CI to frozen dependency installation.
 2. Add an installer bundle and test its launch on a real Windows machine.
-3. Implement a supervised local gateway lifecycle and owner-only session boundary before project writes.
-4. Implement trusted workspace membership, database access, RLS policies, and append-only audit records.
+3. Connect native gateway lifecycle to the tested process-level session gate; generate an ephemeral secret without exposing it to the webview.
+4. Implement owner authentication, trusted workspace membership, database access, RLS policies, and append-only audit records.
 5. Implement approval issuance and single-use consumption bound to exact action arguments.
 6. Add orchestration and a specialist registry using shared contracts.
 7. Connect workspace status to real gateway and project state.
