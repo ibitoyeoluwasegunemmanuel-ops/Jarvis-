@@ -27,8 +27,15 @@
     }
   },
   "bundle": {
-    "active": false,
-    "externalBin": ["binaries/jarvis-gateway"],
-    "icon": ["icons/icon.ico"]
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "externalBin": [
+      "binaries/jarvis-gateway"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ]
   }
 }
