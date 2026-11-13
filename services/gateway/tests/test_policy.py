@@ -101,3 +101,16 @@ def test_capabilities_endpoint_requires_session_and_reports_unbuilt_features(mon
     assert capabilities["persistent_memory"] is False
     assert security["gateway_session_configured"] is True
     assert security["owner_authentication_configured"] is False
+
+def test_tauri_webview_origin_allows_session_header_preflight():
+    response = client.options(
+        "/v1/system/capabilities",
+        headers={
+            "Origin": "http://tauri.localhost",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-Jarvis-Session",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://tauri.localhost"
+    assert "x-jarvis-session" in response.headers["access-control-allow-headers"].lower()
