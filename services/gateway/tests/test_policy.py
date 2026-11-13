@@ -41,3 +41,26 @@ def test_incomplete_target_is_denied(actor):
 
 def test_reversible_scoped_action_is_allowed(actor):
     assert evaluate(actor, request(tier=RiskTier.REVERSIBLE, scope="files:write")).decision == Decision.ALLOW
+
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+
+def test_health_endpoint_reports_gateway_liveness():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["service"] == "jarvis-gateway"
+
+
+def test_capabilities_endpoint_does_not_claim_unbuilt_features():
+    response = client.get("/v1/system/capabilities")
+    assert response.status_code == 200
+    capabilities = response.json()["capabilities"]
+    assert capabilities["health_check"] is True
+    assert capabilities["authorization_policy"] is True
+    assert capabilities["agent_execution"] is False
+    assert capabilities["persistent_memory"] is False
