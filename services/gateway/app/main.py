@@ -74,7 +74,7 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/v1/system/capabilities", tags=["system"])
-async def capabilities() -> dict[str, object]:
+async def capabilities(request: Request) -> dict[str, object]:
     """Report implemented gateway capabilities without implying unavailable features."""
     session_configured = (
         len(os.environ.get("JARVIS_SESSION_TOKEN", "")) >= MIN_SESSION_TOKEN_LENGTH
