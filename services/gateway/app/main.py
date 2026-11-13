@@ -4,6 +4,8 @@ import secrets
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.owner_auth import (
@@ -17,7 +19,7 @@ from app.owner_auth import (
     revoke_owner_session,
     setup_owner,
 )
-from app.workspace_store import create_project, get_project, list_projects
+from app.workspace_store import create_project, get_project, list_projects, update_project_status
 
 MIN_SESSION_TOKEN_LENGTH = 32
 
@@ -197,6 +199,24 @@ def project_read(
 ) -> dict[str, object]:
     """Read one project belonging to the authenticated local owner."""
     project = get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return project
+
+class ProjectStatusRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    status: Literal["active", "paused", "completed"]
+
+
+@app.patch("/v1/projects/{project_id}/status", tags=["projects"])
+def project_status_update(
+    project_id: str,
+    payload: ProjectStatusRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Update a local project status and append an audit event."""
+    project = update_project_status(project_id, payload.status)
     if project is None:
         raise HTTPException(status_code=404, detail="project_not_found")
     return project
