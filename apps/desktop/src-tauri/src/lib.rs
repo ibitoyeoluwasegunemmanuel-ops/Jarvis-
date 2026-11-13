@@ -1,42 +1,96 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
 use uuid::Uuid;
+use zeroize::Zeroize;
 
-const GATEWAY_CAPABILITIES_URL: &str =
-    "http://127.0.0.1:8765/v1/system/capabilities";
+const GATEWAY_BASE_URL: &str = "http://127.0.0.1:8765";
+const GATEWAY_CAPABILITIES_PATH: &str = "/v1/system/capabilities";
+const GATEWAY_AUTH_STATUS_PATH: &str = "/v1/auth/status";
+const GATEWAY_AUTH_SETUP_PATH: &str = "/v1/auth/setup";
+const GATEWAY_AUTH_LOGIN_PATH: &str = "/v1/auth/login";
+const GATEWAY_AUTH_LOGOUT_PATH: &str = "/v1/auth/logout";
 
 struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
     session_token: String,
+    owner_session: Mutex<Option<String>>,
+}
+
+#[derive(Serialize)]
+struct OwnerPasswordPayload<'a> {
+    password: &'a str,
+}
+
+#[derive(Deserialize)]
+struct OwnerSessionPayload {
+    owner_session_token: String,
+    #[allow(dead_code)]
+    display_name: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct OwnerAuthStatus {
+    owner_configured: bool,
+    setup_required: bool,
+    authenticated: bool,
 }
 
 fn new_session_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
+fn gateway_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|_| "native_gateway_client_unavailable".to_string())
+}
+
+fn gateway_url(path: &str) -> String {
+    format!("{GATEWAY_BASE_URL}{path}")
+}
+
+fn owner_auth_error(status: reqwest::StatusCode) -> String {
+    match status.as_u16() {
+        401 => "invalid_owner_credentials".to_string(),
+        409 => "owner_setup_or_account_state_conflict".to_string(),
+        422 => "password_does_not_meet_security_requirements".to_string(),
+        429 => "owner_login_temporarily_locked".to_string(),
+        _ => format!("owner_auth_request_failed_{}", status.as_u16()),
+    }
+}
+
 /// Fetches the one approved read-only gateway resource through native HTTP.
 ///
 /// The webview never receives the process session token and cannot choose a URL,
-/// method, or request headers. Extend this bridge with separately reviewed,
-/// typed commands rather than exposing a generic proxy.
+/// method, or request headers. The optional owner session remains native too.
 #[tauri::command]
 async fn get_gateway_capabilities(
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|_| "native_gateway_client_unavailable".to_string())?;
+    let client = gateway_client()?;
+    let owner_session = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone();
 
-    let response = client
-        .get(GATEWAY_CAPABILITIES_URL)
-        .header("X-Jarvis-Session", &runtime.session_token)
+    let mut request = client
+        .get(gateway_url(GATEWAY_CAPABILITIES_PATH))
+        .header("X-Jarvis-Session", &runtime.session_token);
+
+    if let Some(token) = owner_session {
+        request = request.header("X-Jarvis-Owner-Session", token);
+    }
+
+    let response = request
         .send()
         .await
         .map_err(|_| "gateway_not_ready".to_string())?;
@@ -54,16 +108,152 @@ async fn get_gateway_capabilities(
         .map_err(|_| "gateway_response_invalid".to_string())
 }
 
+/// Reads whether first-run setup is needed and whether the native owner session
+/// is currently valid. No credential or token is returned to the webview.
+#[tauri::command]
+async fn get_owner_auth_status(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<OwnerAuthStatus, String> {
+    let client = gateway_client()?;
+    let owner_session = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone();
+
+    let mut request = client
+        .get(gateway_url(GATEWAY_AUTH_STATUS_PATH))
+        .header("X-Jarvis-Session", &runtime.session_token);
+
+    if let Some(token) = owner_session {
+        request = request.header("X-Jarvis-Owner-Session", token);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|_| "gateway_not_ready".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "owner_status_request_failed_{}",
+            response.status().as_u16()
+        ));
+    }
+
+    response
+        .json::<OwnerAuthStatus>()
+        .await
+        .map_err(|_| "owner_status_response_invalid".to_string())
+}
+
+/// Sends a password to one fixed authentication endpoint and keeps the issued
+/// owner-session token exclusively in native managed state.
+async fn submit_owner_password(
+    runtime: &GatewayRuntime,
+    endpoint: &'static str,
+    mut password: String,
+) -> Result<(), String> {
+    let result = async {
+        let client = gateway_client()?;
+        let response = client
+            .post(gateway_url(endpoint))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .json(&OwnerPasswordPayload {
+                password: &password,
+            })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if !response.status().is_success() {
+            return Err(owner_auth_error(response.status()));
+        }
+
+        let session = response
+            .json::<OwnerSessionPayload>()
+            .await
+            .map_err(|_| "owner_session_response_invalid".to_string())?;
+
+        let mut owner_session = runtime
+            .owner_session
+            .lock()
+            .map_err(|_| "native_owner_session_unavailable".to_string())?;
+        *owner_session = Some(session.owner_session_token);
+        Ok(())
+    }
+    .await;
+
+    password.zeroize();
+    result
+}
+
+/// Creates the first local owner account. The password is never persisted by
+/// the desktop process and the returned session token never crosses into JS.
+#[tauri::command]
+async fn setup_owner(
+    password: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<(), String> {
+    submit_owner_password(&runtime, GATEWAY_AUTH_SETUP_PATH, password).await
+}
+
+/// Authenticates the local owner and stores the issued session in native memory.
+#[tauri::command]
+async fn login_owner(
+    password: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<(), String> {
+    submit_owner_password(&runtime, GATEWAY_AUTH_LOGIN_PATH, password).await
+}
+
+/// Revokes the native owner session and clears it from process memory.
+#[tauri::command]
+async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), String> {
+    let owner_session = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .take();
+
+    let Some(token) = owner_session else {
+        return Ok(());
+    };
+
+    let client = gateway_client()?;
+    let response = client
+        .post(gateway_url(GATEWAY_AUTH_LOGOUT_PATH))
+        .header("X-Jarvis-Session", &runtime.session_token)
+        .header("X-Jarvis-Owner-Session", token)
+        .send()
+        .await
+        .map_err(|_| "gateway_not_ready".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "owner_logout_failed_{}",
+            response.status().as_u16()
+        ));
+    }
+    Ok(())
+}
+
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
 ///
-/// The session token is generated in native code, passed only to the gateway
-/// process environment, and retained only in native managed state for the
-/// fixed typed request bridge above.
+/// The process token is generated in native code and passed only to the gateway
+/// environment. The owner token remains in native managed state and is only
+/// attached by the fixed, typed API commands above.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![get_gateway_capabilities])
+        .invoke_handler(tauri::generate_handler![
+            get_gateway_capabilities,
+            get_owner_auth_status,
+            setup_owner,
+            login_owner,
+            logout_owner
+        ])
         .setup(|app| {
             let token = new_session_token();
             let child = match app.shell().sidecar("jarvis-gateway") {
@@ -99,6 +289,7 @@ pub fn run() {
             app.manage(GatewayRuntime {
                 child: Mutex::new(child),
                 session_token: token,
+                owner_session: Mutex::new(None),
             });
             Ok(())
         })
@@ -108,6 +299,12 @@ pub fn run() {
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
             if let Some(runtime) = handle.try_state::<GatewayRuntime>() {
+                if let Ok(mut owner_session) = runtime.owner_session.lock() {
+                    if let Some(token) = owner_session.as_mut() {
+                        token.zeroize();
+                    }
+                    owner_session.take();
+                }
                 if let Ok(mut child_guard) = runtime.child.lock() {
                     if let Some(child) = child_guard.take() {
                         let _ = child.kill();
