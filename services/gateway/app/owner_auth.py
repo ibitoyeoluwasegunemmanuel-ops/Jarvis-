@@ -116,9 +116,12 @@ def _issue_session(connection: sqlite3.Connection) -> str:
 
 
 def owner_is_configured() -> bool:
-    with _connect() as connection:
+    connection = _connect()
+    try:
         row = connection.execute("SELECT 1 FROM owner_account WHERE id = 1").fetchone()
         return row is not None
+    finally:
+        connection.close()
 
 
 def setup_owner(password: str) -> str:
@@ -211,23 +214,30 @@ def owner_session_is_valid(token: str | None) -> bool:
     if not token or len(token) > 512:
         return False
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with _connect() as connection:
+    connection = _connect()
+    try:
         row = connection.execute(
             "SELECT 1 FROM owner_sessions "
             "WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
             (token_hash, time.time()),
         ).fetchone()
         return row is not None
+    finally:
+        connection.close()
 
 
 def revoke_owner_session(token: str | None) -> bool:
     if not token or len(token) > 512:
         return False
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with _connect() as connection:
+    connection = _connect()
+    try:
         cursor = connection.execute(
             "UPDATE owner_sessions SET revoked_at = ? "
             "WHERE token_hash = ? AND revoked_at IS NULL",
             (time.time(), token_hash),
         )
+        connection.commit()
         return cursor.rowcount == 1
+    finally:
+        connection.close()
