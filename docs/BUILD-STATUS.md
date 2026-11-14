@@ -37,12 +37,14 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ## Validation status
 
-- Latest observed CI run: #93, run ID `43577694380`, commit `80edf47097`.
+- Latest fully successful Windows packaging run: #93, run ID `43577694380`, commit `80edf47097`.
 - Desktop typecheck/build: passed.
 - Gateway Ruff lint: passed.
-- Gateway tests: **32 passed**, with one Starlette/httpx deprecation warning.
-- Windows native-shell job: packaged gateway built successfully; the packaged smoke test passed transport authentication, owner setup/login/logout, project create/list/status, and project task create/list/status. The NSIS installer build and artifact upload are still running. Do not treat the installer as ready until both complete.
-- The run includes the latest native task commands and packaging workflow; no physical Windows-device installation validation or code signing has been done.
+- Gateway tests on run #93: **32 passed**, with one Starlette/httpx deprecation warning.
+- Windows native-shell job on run #93: passed Rust/native build, packaged-gateway health/authentication, owner setup/login/logout, project create/list/status, project-task create/list/status, NSIS installer build, and artifact upload.
+- Verified Windows installer artifact: `jarvis-windows-x64-installer` (artifact ID `14107337111`, approximately 19.8 MB). [Open the successful run and download its artifact](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43577694380).
+- Follow-up run #100 adds the project activity timeline and audit-history smoke test. Its desktop build and gateway checks have passed; gateway tests: **33 passed**. The Windows native-shell job is still running.
+- No physical Windows-device installation validation or code signing has been done.
 
 ## Security boundaries and limitations
 
