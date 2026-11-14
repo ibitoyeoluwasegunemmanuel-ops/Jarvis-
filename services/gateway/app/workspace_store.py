@@ -383,3 +383,145 @@ def list_project_activity(project_id: str) -> list[dict[str, Any]]:
         return [dict(row) for row in rows]
     finally:
         connection.close()
+
+
+MAX_DECISION_TITLE_LENGTH = 160
+MAX_DECISION_TEXT_LENGTH = 4000
+MAX_DECISION_RATIONALE_LENGTH = 4000
+MAX_DECISION_SOURCE_REF_LENGTH = 1000
+
+
+def _normalise_decision_input(
+    title: str, decision: str, rationale: str, source_ref: str
+) -> tuple[str, str, str, str]:
+    values = {
+        "title": title,
+        "decision": decision,
+        "rationale": rationale,
+        "source_ref": source_ref,
+    }
+    if any(not isinstance(value, str) for value in values.values()):
+        raise TypeError("project_decision_fields_must_be_text")
+
+    clean_title = title.strip()
+    clean_decision = decision.strip()
+    clean_rationale = rationale.strip()
+    clean_source_ref = source_ref.strip()
+    if not clean_title:
+        raise ValueError("project_decision_title_required")
+    if not clean_decision:
+        raise ValueError("project_decision_text_required")
+    if len(clean_title) > MAX_DECISION_TITLE_LENGTH:
+        raise ValueError("project_decision_title_too_long")
+    if len(clean_decision) > MAX_DECISION_TEXT_LENGTH:
+        raise ValueError("project_decision_text_too_long")
+    if len(clean_rationale) > MAX_DECISION_RATIONALE_LENGTH:
+        raise ValueError("project_decision_rationale_too_long")
+    if len(clean_source_ref) > MAX_DECISION_SOURCE_REF_LENGTH:
+        raise ValueError("project_decision_source_ref_too_long")
+    return clean_title, clean_decision, clean_rationale, clean_source_ref
+
+
+def list_project_decisions(project_id: str) -> list[dict[str, Any]]:
+    """List append-only decisions belonging to the local owner's project."""
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return []
+
+    connection = connect_database()
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, project_id, title, decision, rationale, source_ref,
+                   decided_at, created_at
+            FROM project_decisions
+            WHERE project_id = ? AND owner_id = 1
+            ORDER BY decided_at DESC, created_at DESC
+            LIMIT 200
+            """,
+            (project_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def create_project_decision(
+    project_id: str,
+    title: str,
+    decision: str,
+    rationale: str = "",
+    source_ref: str = "",
+) -> dict[str, Any] | None:
+    """Record an immutable project decision and append its audit event."""
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return None
+    clean_title, clean_decision, clean_rationale, clean_source_ref = (
+        _normalise_decision_input(title, decision, rationale, source_ref)
+    )
+    decision_id = uuid.uuid4().hex
+    now = time.time()
+
+    connection = connect_database()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        project = connection.execute(
+            "SELECT id FROM projects WHERE id = ? AND owner_id = 1",
+            (project_id,),
+        ).fetchone()
+        if project is None:
+            connection.rollback()
+            return None
+
+        connection.execute(
+            """
+            INSERT INTO project_decisions(
+                id, project_id, owner_id, title, decision, rationale,
+                source_ref, decided_at, created_at
+            ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                decision_id,
+                project_id,
+                clean_title,
+                clean_decision,
+                clean_rationale,
+                clean_source_ref,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO project_audit_events(
+                actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+            ) VALUES (1, 'decision.recorded', 'decision', ?, ?, ?)
+            """,
+            (
+                decision_id,
+                json.dumps(
+                    {"project_id": project_id, "title": clean_title},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                now,
+            ),
+        )
+        row = connection.execute(
+            """
+            SELECT id, project_id, title, decision, rationale, source_ref,
+                   decided_at, created_at
+            FROM project_decisions
+            WHERE id = ? AND owner_id = 1
+            """,
+            (decision_id,),
+        ).fetchone()
+        connection.commit()
+        if row is None:
+            raise RuntimeError("project_decision_create_failed")
+        return dict(row)
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
