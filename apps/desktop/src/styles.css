@@ -130,3 +130,30 @@
 .project-decision-item p{margin:8px 0 0;color:#9aa2b6;font-size:9px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .project-decision-item p strong{color:#c6cce0}
 .decision-source{display:block;margin-top:7px;color:#8b82c8;font:8px 'DM Mono',monospace;overflow-wrap:anywhere}
+
+.project-milestones{border-top:1px solid #ffffff12;margin-top:13px;padding-top:12px}
+.milestone-create-form{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.milestone-create-form input{min-width:0;width:100%;border:1px solid #ffffff18;background:#101624;color:#eef0fb;border-radius:7px;padding:9px 10px;font:10px 'DM Sans',sans-serif;outline:none}
+.milestone-create-form input:focus{border-color:#9180e7}
+.milestone-create-form input::placeholder{color:#646d82}
+.milestone-create-form label{align-self:center;color:#7f899f;font:8px 'DM Mono',monospace;letter-spacing:.6px;text-transform:uppercase}
+.milestone-create-form button{justify-self:end;grid-column:2;border:0;border-radius:7px;background:#7962d8;color:white;padding:9px 12px;font-size:9px;font-weight:600;cursor:pointer}
+.milestone-create-form button:disabled{opacity:.5;cursor:not-allowed}
+.milestone-list{display:grid;margin-top:9px}
+.milestone-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid #ffffff0c}
+.milestone-copy{min-width:0;flex:1}
+.milestone-copy b,.milestone-copy span,.milestone-copy small{display:block}
+.milestone-copy b{font:500 10px Manrope;color:#d9ddec;overflow-wrap:anywhere}
+.milestone-copy span{margin-top:3px;color:#8791a7;font-size:9px;line-height:1.5}
+.milestone-copy small{margin-top:5px;color:#6f7890;font:8px 'DM Mono',monospace}
+.milestone-status-select{flex:none;max-width:118px;border:1px solid #ffffff18;border-radius:5px;padding:5px 7px;background:#151a29;color:#b6bdd1;font:8px 'DM Mono',monospace;cursor:pointer;outline:none}
+.milestone-status-select.planned{color:#e7c47e;border-color:#bd8d3b35;background:#2b2111}
+.milestone-status-select.in_progress{color:#8dc9ff;border-color:#4591ce38;background:#112233}
+.milestone-status-select.completed{color:#77d8ad;border-color:#56c99a35;background:#10261f}
+.milestone-status-select.cancelled{color:#b5a7ad;border-color:#a88a9735;background:#241b21}
+.milestone-status-select:disabled{opacity:.55;cursor:wait}
+@media(max-width:580px){
+  .milestone-create-form{grid-template-columns:1fr}
+  .milestone-create-form button{grid-column:1}
+  .milestone-row{flex-wrap:wrap}
+}
