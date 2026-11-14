@@ -103,3 +103,13 @@
   .task-create-form button{min-height:34px}
   .task-row{align-items:flex-start;flex-wrap:wrap}
 }
+
+.project-activity{border-top:1px solid #ffffff12;margin-top:13px;padding-top:12px}
+.project-activity-list{display:grid}
+.project-activity-row{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid #ffffff0a}
+.project-activity-row:last-child{border-bottom:0}
+.project-activity-row .activity-dot{flex:none;width:6px;height:6px;margin-top:5px}
+.project-activity-row>div{min-width:0}
+.project-activity-row b,.project-activity-row small{display:block}
+.project-activity-row b{font:500 9px Manrope;color:#c9cee0;text-transform:capitalize}
+.project-activity-row small{margin-top:3px;color:#6f7890;font:8px 'DM Mono',monospace}
