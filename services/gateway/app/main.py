@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.approval_routes import router as approval_router
+from app.execution_routes import router as execution_router
 from app.owner_auth import (
     InvalidOwnerCredentials,
     OwnerAlreadyConfigured,
@@ -52,6 +53,7 @@ app = FastAPI(
 )
 
 app.include_router(approval_router)
+app.include_router(execution_router)
 
 
 @app.middleware("http")
