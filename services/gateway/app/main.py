@@ -5,7 +5,6 @@ from typing import Literal
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
 from pydantic import BaseModel, Field
 
 from app.owner_auth import (
