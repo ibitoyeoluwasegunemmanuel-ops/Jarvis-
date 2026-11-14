@@ -157,3 +157,12 @@
   .milestone-create-form button{grid-column:1}
   .milestone-row{flex-wrap:wrap}
 }
+
+
+/* Action approval review controls */
+.approval-actions{display:flex;gap:7px;margin-top:9px}
+.approval-actions button{border:1px solid #ffffff1a;border-radius:6px;background:#171f2e;color:#dfe5f5;padding:7px 11px;font-size:9px;cursor:pointer}
+.approval-actions button:first-child{background:#245d49;border-color:#347b60;color:#e4fff2}
+.approval-actions button:last-child{background:#542d37;border-color:#7d3d4a;color:#ffe9ed}
+.approval-actions button:disabled{opacity:.5;cursor:wait}
+.project-decision-item pre{margin:8px 0 0;padding:9px;border:1px solid #ffffff10;border-radius:6px;background:#0c111c;color:#aeb8cf;font:9px 'DM Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
