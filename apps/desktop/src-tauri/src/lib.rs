@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -23,6 +24,7 @@ struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
     session_token: String,
     owner_session: Mutex<Option<String>>,
+    approval_nonces: Mutex<HashMap<String, String>>,
 }
 
 #[derive(Serialize)]
@@ -44,6 +46,45 @@ struct OwnerAuthStatus {
     authenticated: bool,
 }
 
+
+#[derive(Deserialize, Serialize)]
+struct ApprovalRecord {
+    id: String,
+    project_id: String,
+    action: String,
+    arguments: serde_json::Value,
+    arguments_hash: String,
+    requester: String,
+    status: String,
+    created_at: f64,
+    expires_at: f64,
+    decided_at: Option<f64>,
+    consumed_at: Option<f64>,
+}
+#[derive(Deserialize)]
+struct ApprovalCreatedRecord {
+    id: String,
+    project_id: String,
+    action: String,
+    arguments: serde_json::Value,
+    arguments_hash: String,
+    requester: String,
+    status: String,
+    created_at: f64,
+    expires_at: f64,
+    nonce: String,
+}
+#[derive(Serialize)]
+struct ApprovalCreatePayload {
+    project_id: String,
+    action: String,
+    arguments: serde_json::Value,
+    ttl_seconds: u16,
+}
+#[derive(Serialize)]
+struct ApprovalDecisionPayload {
+    approve: bool,
+}
 
 #[derive(Deserialize, Serialize)]
 struct ProjectRecord {
@@ -468,6 +509,70 @@ async fn create_project_memory(project_id: String, category: String, content: St
     token.zeroize(); result
 }
 
+
+#[tauri::command]
+async fn list_project_approvals(project_id: String, runtime: tauri::State<'_, GatewayRuntime>) -> Result<Vec<ApprovalRecord>, String> {
+    if !valid_workspace_id(&project_id) { return Err("project_id_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{}", gateway_url("/v1/approvals"), project_id);
+        let response = client.get(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if !response.status().is_success() { return Err(format!("approval_list_failed_{}", response.status().as_u16())); }
+        response.json::<Vec<ApprovalRecord>>().await.map_err(|_| "approval_list_response_invalid".into())
+    }.await;
+    token.zeroize(); result
+}
+
+#[tauri::command]
+async fn create_project_approval(project_id: String, action: String, arguments: serde_json::Value, ttl_seconds: u16, runtime: tauri::State<'_, GatewayRuntime>) -> Result<ApprovalRecord, String> {
+    if !valid_workspace_id(&project_id) || action.trim().is_empty() || action.len() > 120 || !(1..=900).contains(&ttl_seconds) || !arguments.is_object() {
+        return Err("approval_request_details_invalid".into());
+    }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let response = client.post(gateway_url("/v1/approvals"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &token)
+            .json(&ApprovalCreatePayload { project_id, action, arguments, ttl_seconds })
+            .send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if !response.status().is_success() { return Err(format!("approval_create_failed_{}", response.status().as_u16())); }
+        let created = response.json::<ApprovalCreatedRecord>().await.map_err(|_| "approval_create_response_invalid".to_string())?;
+        runtime.approval_nonces.lock().map_err(|_| "native_approval_vault_unavailable".to_string())?
+            .insert(created.id.clone(), created.nonce);
+        Ok(ApprovalRecord {
+            id: created.id, project_id: created.project_id, action: created.action,
+            arguments: created.arguments, arguments_hash: created.arguments_hash,
+            requester: created.requester, status: created.status, created_at: created.created_at,
+            expires_at: created.expires_at, decided_at: None, consumed_at: None,
+        })
+    }.await;
+    token.zeroize(); result
+}
+
+#[tauri::command]
+async fn decide_project_approval(approval_id: String, approve: bool, runtime: tauri::State<'_, GatewayRuntime>) -> Result<serde_json::Value, String> {
+    if approval_id.trim().is_empty() || approval_id.len() > 64 { return Err("approval_id_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{}/decision", gateway_url("/v1/approvals"), approval_id);
+        let response = client.post(url).header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &token)
+            .json(&ApprovalDecisionPayload { approve }).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if !response.status().is_success() { return Err(format!("approval_decision_failed_{}", response.status().as_u16())); }
+        let value = response.json::<serde_json::Value>().await.map_err(|_| "approval_decision_response_invalid".to_string())?;
+        if !approve {
+            if let Ok(mut vault) = runtime.approval_nonces.lock() { vault.remove(&approval_id); }
+        }
+        Ok(value)
+    }.await;
+    token.zeroize(); result
+}
 
 #[tauri::command]
 async fn list_projects(
@@ -1159,7 +1264,10 @@ pub fn run() {
             create_project_risk,
             update_project_risk_status,
             list_project_memory,
-            create_project_memory
+            create_project_memory,
+            list_project_approvals,
+            create_project_approval,
+            decide_project_approval
         ])
         .setup(|app| {
             let token = new_session_token();
@@ -1197,6 +1305,7 @@ pub fn run() {
                 child: Mutex::new(child),
                 session_token: token,
                 owner_session: Mutex::new(None),
+                approval_nonces: Mutex::new(HashMap::new()),
             });
             Ok(())
         })
