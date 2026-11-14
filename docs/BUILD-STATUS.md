@@ -21,7 +21,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Project tasks support owner-protected list/create/status operations. Task status values are `open`, `in_progress`, and `done`.
 - Project and task creation/status changes append immutable audit events. SQLite triggers reject updates/deletes to audit events.
 - Project decisions are stored as append-only records with title, decision, rationale, and an optional source reference; each record creates an audit event.
-- Project milestones support target dates, descriptions, and planned/in-progress/completed/cancelled status; creation and status changes append audit events.
+- Project milestones support target dates, descriptions, and planned/in-progress/completed/cancelled status; creation and status changes append audit events.\n- Gateway project-brain APIs now include an owner-scoped risk register (severity, mitigation, status) and append-only project memory (category, content, source reference, confidence); writes append audit events and appear in project activity. These APIs are not yet connected to the desktop UI/native bridge.
 - Owner-protected project activity endpoint returns recent audit history for projects, tasks, decisions, and milestones; the UI displays the latest events.
 - React Projects view supports project creation, status changes, task creation, task listing, task status changes, milestone planning/status changes, an audit-history timeline, and a decision journal.
 - Shared TypeScript contracts for specialist tasks, risk tiers, approvals, and evidence.
@@ -30,7 +30,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ### Not implemented yet
 
-- Risk records and project memory.
+- Desktop UI/native bridge for the newly added project risk register and project memory APIs.
 - Trusted cloud identity/workspace membership, PostgreSQL connection, production RLS, cloud sync, or multi-user support.
 - Agent orchestration, model-provider connection, specialist execution, and actual approval issuance/consumption.
 - Realtime voice, Nigerian-English speech evaluation, avatar rendering, screen/camera sharing.
@@ -56,7 +56,7 @@ The gateway process token is a transport gate, not owner identity. Owner account
 ## Next integrated engineering targets
 
 1. Complete Windows native-shell validation, packaged gateway smoke tests for task operations, and NSIS artifact verification.
-2. Add risk records and project memory to complete the project brain.
+2. Connect the new project risk register and append-only project memory APIs to typed native commands and the desktop workspace.
 3. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
 4. Implement approval issuance and single-use consumption bound to exact action arguments.
 5. Add orchestrator and specialist execution behind the shared policy engine.
