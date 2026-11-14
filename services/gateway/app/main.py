@@ -18,7 +18,15 @@ from app.owner_auth import (
     revoke_owner_session,
     setup_owner,
 )
-from app.workspace_store import create_project, get_project, list_projects, update_project_status
+from app.workspace_store import (
+    create_project,
+    create_project_task,
+    get_project,
+    list_project_tasks,
+    list_projects,
+    update_project_status,
+    update_project_task_status,
+)
 
 MIN_SESSION_TOKEN_LENGTH = 32
 
@@ -208,6 +216,19 @@ class ProjectStatusRequest(BaseModel):
     status: Literal["active", "paused", "completed"]
 
 
+class ProjectTaskCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+
+
+class ProjectTaskStatusRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    status: Literal["open", "in_progress", "done"]
+
+
 @app.patch("/v1/projects/{project_id}/status", tags=["projects"])
 def project_status_update(
     project_id: str,
@@ -219,4 +240,45 @@ def project_status_update(
     if project is None:
         raise HTTPException(status_code=404, detail="project_not_found")
     return project
+
+
+
+@app.get("/v1/projects/{project_id}/tasks", tags=["projects"])
+def project_tasks_list(
+    project_id: str,
+    _: None = Depends(require_owner_session),
+) -> list[dict[str, object]]:
+    """List tasks belonging to one owner project."""
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return list_project_tasks(project_id)
+
+
+@app.post("/v1/projects/{project_id}/tasks", tags=["projects"], status_code=201)
+def project_task_create(
+    project_id: str,
+    payload: ProjectTaskCreateRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Create a task inside one local owner project."""
+    try:
+        task = create_project_task(project_id, payload.title, payload.description)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if task is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return task
+
+
+@app.patch("/v1/tasks/{task_id}/status", tags=["projects"])
+def project_task_status_update(
+    task_id: str,
+    payload: ProjectTaskStatusRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Update task status and append an immutable audit event."""
+    task = update_project_task_status(task_id, payload.status)
+    if task is None:
+        raise HTTPException(status_code=404, detail="project_task_not_found")
+    return task
 
