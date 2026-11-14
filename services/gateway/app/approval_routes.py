@@ -9,7 +9,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.approval_store import ApprovalError, decide_approval, list_project_approvals, request_approval
+from app.approval_store import (
+    ApprovalError,
+    decide_approval,
+    list_project_approvals,
+    request_approval,
+)
 from app.owner_auth import owner_session_is_valid
 
 router = APIRouter(prefix="/v1/approvals", tags=["approvals"])
