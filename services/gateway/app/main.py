@@ -18,7 +18,13 @@ from app.owner_auth import (
     revoke_owner_session,
     setup_owner,
 )
-from app.project_brain import (\n    create_project_memory,\n    create_project_risk,\n    list_project_memory,\n    list_project_risks,\n    update_project_risk_status,\n)\nfrom app.workspace_store import (
+from app.project_brain import (
+    create_project_memory,
+    create_project_risk,
+    list_project_memory,
+    list_project_risks,
+    update_project_risk_status,
+)\nfrom app.workspace_store import (
     create_project,
     create_project_decision,
     create_project_milestone,
