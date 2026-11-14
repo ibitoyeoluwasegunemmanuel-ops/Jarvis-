@@ -20,15 +20,16 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Projects support owner-protected list/create/read/status operations. Project status values are `active`, `paused`, and `completed`.
 - Project tasks support owner-protected list/create/status operations. Task status values are `open`, `in_progress`, and `done`.
 - Project and task creation/status changes append immutable audit events. SQLite triggers reject updates/deletes to audit events.
+- Project decisions are stored as append-only records with title, decision, rationale, and an optional source reference; each record creates an audit event.
 - Owner-protected project activity endpoint returns recent audit history for a project and its tasks; the UI displays the latest events.
-- React Projects view supports project creation, status changes, task creation, task listing, task status changes, and an audit-history timeline.
+- React Projects view supports project creation, status changes, task creation, task listing, task status changes, an audit-history timeline, and a decision journal.
 - Shared TypeScript contracts for specialist tasks, risk tiers, approvals, and evidence.
 - Fail-closed policy decision module covering actor, workspace, scope, target, and risk tier.
 - Initial PostgreSQL migration describes future multi-user workspaces, projects, tasks, decisions, memory, agent runs, approvals, and audit events.
 
 ### Not implemented yet
 
-- Project milestones, decisions, risks, project memory, and richer project history APIs.
+- Project milestones, risk records, project memory, and richer project history APIs.
 - Trusted cloud identity/workspace membership, PostgreSQL connection, production RLS, cloud sync, or multi-user support.
 - Agent orchestration, model-provider connection, specialist execution, and actual approval issuance/consumption.
 - Realtime voice, Nigerian-English speech evaluation, avatar rendering, screen/camera sharing.
@@ -38,13 +39,13 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ## Validation status
 
-- Latest fully successful Windows packaging run: #93, run ID `43577694380`, commit `80edf47097`.
+- Latest fully successful Windows packaging run: #100, run ID `43578241448`, commit `cfa3ee8b22`.
 - Desktop typecheck/build: passed.
 - Gateway Ruff lint: passed.
-- Gateway tests on run #93: **32 passed**, with one Starlette/httpx deprecation warning.
-- Windows native-shell job on run #93: passed Rust/native build, packaged-gateway health/authentication, owner setup/login/logout, project create/list/status, project-task create/list/status, NSIS installer build, and artifact upload.
-- Verified Windows installer artifact: `jarvis-windows-x64-installer` (artifact ID `14107337111`, approximately 19.8 MB). [Open the successful run and download its artifact](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43577694380).
-- Follow-up run #100 adds the project activity timeline and audit-history smoke test. Desktop build and gateway lint passed; gateway tests: **33 passed**. The packaged gateway sidecar build and expanded activity smoke test also passed. The latest NSIS installer build/artifact upload is still running.
+- Gateway tests on run #100: **33 passed**, with one Starlette/httpx deprecation warning.
+- Windows native-shell job on run #100: passed Rust/native build, packaged-gateway health/authentication, owner setup/login/logout, project create/list/status, project-task create/list/status, project activity history smoke test, NSIS installer build, and artifact upload.
+- Verified Windows installer artifact: `jarvis-windows-x64-installer` (artifact ID `14107218567`, approximately 19.8 MB). [Open the successful run and download its artifact](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43578241448).
+- Follow-up run #108 adds the append-only project decision journal. Its Ruff lint has passed; gateway tests and desktop/native validation are running.
 - No physical Windows-device installation validation or code signing has been done.
 
 ## Security boundaries and limitations
