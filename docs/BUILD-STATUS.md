@@ -20,7 +20,8 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Projects support owner-protected list/create/read/status operations. Project status values are `active`, `paused`, and `completed`.
 - Project tasks support owner-protected list/create/status operations. Task status values are `open`, `in_progress`, and `done`.
 - Project and task creation/status changes append immutable audit events. SQLite triggers reject updates/deletes to audit events.
-- React Projects view supports project creation, status changes, task creation, task listing, and task status changes.
+- Owner-protected project activity endpoint returns recent audit history for a project and its tasks; the UI displays the latest events.
+- React Projects view supports project creation, status changes, task creation, task listing, task status changes, and an audit-history timeline.
 - Shared TypeScript contracts for specialist tasks, risk tiers, approvals, and evidence.
 - Fail-closed policy decision module covering actor, workspace, scope, target, and risk tier.
 - Initial PostgreSQL migration describes future multi-user workspaces, projects, tasks, decisions, memory, agent runs, approvals, and audit events.
@@ -43,7 +44,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Gateway tests on run #93: **32 passed**, with one Starlette/httpx deprecation warning.
 - Windows native-shell job on run #93: passed Rust/native build, packaged-gateway health/authentication, owner setup/login/logout, project create/list/status, project-task create/list/status, NSIS installer build, and artifact upload.
 - Verified Windows installer artifact: `jarvis-windows-x64-installer` (artifact ID `14107337111`, approximately 19.8 MB). [Open the successful run and download its artifact](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43577694380).
-- Follow-up run #100 adds the project activity timeline and audit-history smoke test. Its desktop build and gateway checks have passed; gateway tests: **33 passed**. The Windows native-shell job is still running.
+- Follow-up run #100 adds the project activity timeline and audit-history smoke test. Desktop build and gateway lint passed; gateway tests: **33 passed**. The packaged gateway sidecar build and expanded activity smoke test also passed. The latest NSIS installer build/artifact upload is still running.
 - No physical Windows-device installation validation or code signing has been done.
 
 ## Security boundaries and limitations
