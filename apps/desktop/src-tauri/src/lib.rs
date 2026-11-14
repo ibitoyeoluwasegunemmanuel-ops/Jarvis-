@@ -17,6 +17,7 @@ const GATEWAY_AUTH_SETUP_PATH: &str = "/v1/auth/setup";
 const GATEWAY_AUTH_LOGIN_PATH: &str = "/v1/auth/login";
 const GATEWAY_AUTH_LOGOUT_PATH: &str = "/v1/auth/logout";
 const GATEWAY_PROJECTS_PATH: &str = "/v1/projects";
+const GATEWAY_TASKS_PATH: &str = "/v1/tasks";
 
 struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
@@ -54,6 +55,17 @@ struct ProjectRecord {
     updated_at: f64,
 }
 
+#[derive(Deserialize, Serialize)]
+struct ProjectTaskRecord {
+    id: String,
+    project_id: String,
+    title: String,
+    description: String,
+    status: String,
+    created_at: f64,
+    updated_at: f64,
+}
+
 #[derive(Serialize)]
 struct ProjectCreatePayload<'a> {
     name: &'a str,
@@ -63,6 +75,21 @@ struct ProjectCreatePayload<'a> {
 #[derive(Serialize)]
 struct ProjectStatusPayload<'a> {
     status: &'a str,
+}
+
+#[derive(Serialize)]
+struct ProjectTaskCreatePayload<'a> {
+    title: &'a str,
+    description: &'a str,
+}
+
+#[derive(Serialize)]
+struct ProjectTaskStatusPayload<'a> {
+    status: &'a str,
+}
+
+fn valid_workspace_id(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn new_session_token() -> String {
@@ -376,6 +403,171 @@ async fn create_project(
 }
 
 
+
+/// Lists tasks for one validated project. Project ownership is enforced by the gateway.
+#[tauri::command]
+async fn list_project_tasks(
+    project_id: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ProjectTaskRecord>, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!("{}/{project_id}/tasks", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client
+            .get(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_task_list_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<Vec<ProjectTaskRecord>>()
+            .await
+            .map_err(|_| "project_task_list_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Creates a task in a project via a fixed typed gateway route.
+#[tauri::command]
+async fn create_project_task(
+    project_id: String,
+    title: String,
+    description: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectTaskRecord, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    if title.trim().is_empty() || title.trim().len() > 160 || description.len() > 2000 {
+        return Err("project_task_details_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!("{}/{project_id}/tasks", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client
+            .post(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectTaskCreatePayload {
+                title: &title,
+                description: &description,
+            })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_task_details_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_task_create_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectTaskRecord>()
+            .await
+            .map_err(|_| "project_task_create_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Changes a task's status through the owner-authenticated native bridge.
+#[tauri::command]
+async fn update_project_task_status(
+    task_id: String,
+    status: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectTaskRecord, String> {
+    if !valid_workspace_id(&task_id) {
+        return Err("project_task_id_invalid".to_string());
+    }
+    if !["open", "in_progress", "done"].contains(&status.as_str()) {
+        return Err("project_task_status_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!("{}/{task_id}/status", gateway_url(GATEWAY_TASKS_PATH));
+        let response = client
+            .patch(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectTaskStatusPayload { status: &status })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_task_not_found".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_task_status_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_task_status_update_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectTaskRecord>()
+            .await
+            .map_err(|_| "project_task_status_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Updates a project's status through a typed native request. Only known status
 /// values are accepted by the gateway, which appends an audit event per change.
 #[tauri::command]
@@ -454,7 +646,10 @@ pub fn run() {
             logout_owner,
             list_projects,
             create_project,
-            update_project_status
+            update_project_status,
+            list_project_tasks,
+            create_project_task,
+            update_project_task_status
         ])
         .setup(|app| {
             let token = new_session_token();
