@@ -6,7 +6,8 @@ never from model-generated arguments.
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.approval_store import ApprovalError, consume_approval
 from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
