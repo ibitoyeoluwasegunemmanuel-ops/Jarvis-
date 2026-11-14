@@ -634,3 +634,87 @@ def test_project_activity_contains_audited_project_and_task_changes(monkeypatch,
 
     missing = client.get("/v1/projects/unknown-project/activity", headers=headers)
     assert missing.status_code == 404
+
+
+def test_project_decisions_are_owner_scoped_and_append_only(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Sendly", "description": "Nearby money transfer"},
+    )
+    project_id = project.json()["id"]
+
+    denied = client.get(
+        f"/v1/projects/{project_id}/decisions",
+        headers=_process_headers(),
+    )
+    assert denied.status_code == 401
+
+    created = client.post(
+        f"/v1/projects/{project_id}/decisions",
+        headers=headers,
+        json={
+            "title": "Use a regulated payments partner",
+            "decision": "Launch through an appropriately licensed payment partner.",
+            "rationale": "Avoid handling regulated payment activity before licensing is secured.",
+            "source_ref": "https://example.com/regulatory-review",
+        },
+    )
+    assert created.status_code == 201
+    record = created.json()
+    assert record["project_id"] == project_id
+    assert record["title"] == "Use a regulated payments partner"
+    assert record["source_ref"] == "https://example.com/regulatory-review"
+    assert "owner_id" not in record
+
+    listed = client.get(f"/v1/projects/{project_id}/decisions", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json() == [record]
+
+    connection = connect_database()
+    try:
+        event = connection.execute(
+            "SELECT event_type, entity_type FROM project_audit_events WHERE entity_id = ?",
+            (record["id"],),
+        ).fetchone()
+        assert event["event_type"] == "decision.recorded"
+        assert event["entity_type"] == "decision"
+        with pytest.raises(sqlite3.IntegrityError, match="project_decisions_are_append_only"):
+            connection.execute(
+                "UPDATE project_decisions SET title = 'silently changed' WHERE id = ?",
+                (record["id"],),
+            )
+        connection.rollback()
+        with pytest.raises(sqlite3.IntegrityError, match="project_decisions_are_append_only"):
+            connection.execute(
+                "DELETE FROM project_decisions WHERE id = ?",
+                (record["id"],),
+            )
+        connection.rollback()
+    finally:
+        connection.close()
+
+
+def test_project_decision_requires_text_and_existing_project(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "CareLink Africa", "description": ""},
+    )
+    project_id = project.json()["id"]
+
+    invalid = client.post(
+        f"/v1/projects/{project_id}/decisions",
+        headers=headers,
+        json={"title": " ", "decision": " "},
+    )
+    assert invalid.status_code == 422
+
+    missing = client.post(
+        "/v1/projects/unknown-project/decisions",
+        headers=headers,
+        json={"title": "A choice", "decision": "A decision"},
+    )
+    assert missing.status_code == 404
