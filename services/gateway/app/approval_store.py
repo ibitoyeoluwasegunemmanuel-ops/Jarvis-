@@ -135,6 +135,37 @@ def request_approval(
         connection.close()
 
 
+
+def list_project_approvals(project_id: str) -> list[dict[str, Any]] | None:
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return None
+    connection = connect_database()
+    try:
+        _ensure_tables(connection)
+        exists = connection.execute(
+            "SELECT 1 FROM projects WHERE id = ? AND owner_id = 1", (project_id,)
+        ).fetchone()
+        if exists is None:
+            return None
+        rows = connection.execute(
+            """SELECT id, project_id, action, arguments_json, arguments_hash,
+                      requester, status, created_at, expires_at, decided_at, consumed_at
+               FROM action_approvals
+               WHERE owner_id = 1 AND project_id = ?
+               ORDER BY created_at DESC LIMIT 100""",
+            (project_id,),
+        ).fetchall()
+        return [{
+            "id": row["id"], "project_id": row["project_id"], "action": row["action"],
+            "arguments": json.loads(row["arguments_json"]),
+            "arguments_hash": row["arguments_hash"], "requester": row["requester"],
+            "status": row["status"], "created_at": row["created_at"],
+            "expires_at": row["expires_at"], "decided_at": row["decided_at"],
+            "consumed_at": row["consumed_at"],
+        } for row in rows]
+    finally:
+        connection.close()
+
 def decide_approval(approval_id: str, approve: bool) -> dict[str, Any] | None:
     if not isinstance(approval_id, str) or not approval_id or len(approval_id) > 64:
         return None
