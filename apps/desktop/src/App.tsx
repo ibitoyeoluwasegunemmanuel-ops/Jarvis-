@@ -444,6 +444,11 @@ export default function App() {
     }
   };
 
+  const refreshProjectActivity = async (projectId: string) => {
+    const activity = await invoke<ProjectActivity[]>("list_project_activity", { projectId });
+    setActivityByProject(current => ({ ...current, [projectId]: activity }));
+  };
+
   const submitProjectTask = async (
     event: FormEvent<HTMLFormElement>,
     projectId: string
@@ -464,6 +469,11 @@ export default function App() {
         ...current,
         [projectId]: [task, ...(current[projectId] ?? []).filter(item => item.id !== task.id)]
       }));
+      try {
+        await refreshProjectActivity(projectId);
+      } catch {
+        setTaskError("Task saved, but the activity timeline could not refresh.");
+      }
       setTaskTitle("");
       setTaskDescription("");
     } catch (error) {
@@ -502,6 +512,11 @@ export default function App() {
         ...current,
         [projectId]: [record, ...(current[projectId] ?? []).filter(item => item.id !== record.id)]
       }));
+      try {
+        await refreshProjectActivity(projectId);
+      } catch {
+        setTaskError("Decision saved, but the activity timeline could not refresh.");
+      }
       setDecisionTitle("");
       setDecisionText("");
       setDecisionRationale("");
@@ -535,6 +550,11 @@ export default function App() {
         ...current,
         [projectId]: (current[projectId] ?? []).map(item => item.id === taskId ? updated : item)
       }));
+      try {
+        await refreshProjectActivity(projectId);
+      } catch {
+        setTaskError("Task updated, but the activity timeline could not refresh.");
+      }
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
