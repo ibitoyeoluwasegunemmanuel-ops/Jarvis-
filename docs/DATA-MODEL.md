@@ -1,6 +1,6 @@
 # JARVIS — Data Model
 
-Status: Logical schema proposal. Convert to versioned SQL migrations after reviewing deployment and identity choices.
+Status: The cloud/multi-user schema below is the logical target model. The first local Windows build currently implements a smaller SQLite subset for owner authentication, projects, tasks, and audit events; it does not yet implement cloud identity, workspace membership, or production RLS.
 
 ## 1. Modelling rules
 - Tenant/workspace scope on every tenant-owned record.
