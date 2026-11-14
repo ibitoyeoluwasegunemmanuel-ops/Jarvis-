@@ -1,6 +1,6 @@
 import pytest
 
-from app.approval_store import list_project_approvals, request_approval
+from app.approval_store import decide_approval, list_project_approvals, request_approval
 from app.dispatcher import DispatchError, dispatch_approved_action
 from app.owner_auth import setup_owner
 from app.policy import ActorContext
@@ -105,8 +105,6 @@ def test_dispatch_rejects_tampered_arguments_and_wrong_nonce(workspace):
 def test_dispatch_rejects_approval_from_different_project_before_consumption(
     workspace, monkeypatch, tmp_path
 ):
-    from app.approval_store import decide_approval, request_approval, list_project_approvals
-
     other_project = create_project("Different Workspace")
     arguments = {"project_id": other_project["id"], "title": "Wrong project task"}
     created = request_approval(
