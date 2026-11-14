@@ -22,11 +22,14 @@ from app.workspace_store import (
     create_project,
     create_project_decision,
     create_project_task,
+    create_project_milestone,
     get_project,
     list_project_activity,
     list_project_decisions,
+    list_project_milestones,
     list_project_tasks,
     list_projects,
+    update_project_milestone_status,
     update_project_status,
     update_project_task_status,
 )
@@ -241,6 +244,20 @@ class ProjectDecisionCreateRequest(BaseModel):
     source_ref: str = Field(default="", max_length=1000)
 
 
+class ProjectMilestoneCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    target_at: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class ProjectMilestoneStatusRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    status: Literal["planned", "in_progress", "completed", "cancelled"]
+
+
 @app.patch("/v1/projects/{project_id}/status", tags=["projects"])
 def project_status_update(
     project_id: str,
@@ -310,6 +327,48 @@ def project_decision_create(
     if decision is None:
         raise HTTPException(status_code=404, detail="project_not_found")
     return decision
+
+
+@app.get("/v1/projects/{project_id}/milestones", tags=["projects"])
+def project_milestones_list(
+    project_id: str,
+    _: None = Depends(require_owner_session),
+) -> list[dict[str, object]]:
+    """List milestones belonging to one local owner project."""
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return list_project_milestones(project_id)
+
+
+@app.post("/v1/projects/{project_id}/milestones", tags=["projects"], status_code=201)
+def project_milestone_create(
+    project_id: str,
+    payload: ProjectMilestoneCreateRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Create a project milestone with an optional target timestamp."""
+    try:
+        milestone = create_project_milestone(
+            project_id, payload.title, payload.description, payload.target_at
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if milestone is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return milestone
+
+
+@app.patch("/v1/milestones/{milestone_id}/status", tags=["projects"])
+def project_milestone_status_update(
+    milestone_id: str,
+    payload: ProjectMilestoneStatusRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Change milestone status and append an audit event."""
+    milestone = update_project_milestone_status(milestone_id, payload.status)
+    if milestone is None:
+        raise HTTPException(status_code=404, detail="project_milestone_not_found")
+    return milestone
 
 
 @app.post("/v1/projects/{project_id}/tasks", tags=["projects"], status_code=201)
