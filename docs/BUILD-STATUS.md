@@ -25,13 +25,16 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Project risk register and append-only project memory are available through owner-scoped gateway APIs and fixed typed native commands. The Projects UI loads, creates, lists and updates risks, and creates/lists source-attributed memory entries. Writes refresh the activity timeline.
 - Project activity endpoint returns recent audit history; the UI displays the latest events.
 - Shared TypeScript contracts exist for specialist tasks, risk tiers, approvals, and evidence.
+- Owner-authenticated approval requests, approve/reject decisions, and project approval history are available through the gateway and desktop Projects UI. Approval nonces are retained in native Rust state and are not exposed to the webview.
+- A restricted in-process dispatcher currently allowlists only `project.task.create`. It re-checks actor scope and workspace, binds the single-use approval to the exact action/arguments/project, consumes it atomically, and rejects replay and cross-project use.
+- Dispatcher execution start/success/failure events are appended to the immutable project audit log and included in the project activity timeline.
 - Fail-closed policy decision module covers actor, workspace, scope, target, and risk tier.
 - Initial PostgreSQL migration describes future multi-user workspaces, projects, tasks, decisions, memory, agent runs, approvals, and audit events.
 
 ### Not implemented yet
 
 - Trusted cloud identity/workspace membership, PostgreSQL connection, production RLS, cloud sync, or multi-user support.
-- Agent orchestration, model-provider connection, specialist execution, and actual approval issuance/consumption.
+- Agent orchestration, model-provider connection, trusted agent identity/scope issuance, and specialist execution. The dispatcher is not yet connected to a live orchestrator or native execution command; approval records alone do not trigger execution.
 - Realtime voice, Nigerian-English speech evaluation, avatar rendering, screen/camera sharing.
 - Local computer operator, browser/file tools, and external integrations.
 - Monitoring workers, notifications, and background scheduling.
@@ -39,7 +42,8 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ## Validation status
 
-- GitHub Actions run #133 (run ID `43580494417`, commit `64ea11d348939b3697615af759ebc837d7b5a5bf`): desktop, gateway, and native-shell jobs all **passed**.
+- GitHub Actions run #133 (run ID `43580494417`, commit `64ea11d348939b3697615af759ebc837d7b5a5bf`): desktop, gateway, and native-shell jobs all **passed**; this remains the latest fully documented installer artifact.
+- Approval UI and API lifecycle were added in subsequent commits. Dispatcher tests exposed a missing test import in run #155; the import fix and execution-audit changes are in newer commits and await the current CI run. Do not treat those changes as verified until the latest run completes.
 - Run #133 produced the `jarvis-windows-x64-installer` artifact (artifact ID `14107958293`, 19,906,991 bytes) and `jarvis-pnpm-lockfile` artifact. [View run #133 and its artifacts](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43580494417).
 - The successful native-shell job verifies the Windows build/package workflow in CI. It does not prove installation on the owner's physical Windows device.
 - No physical Windows-device installation validation or code signing has been done.
