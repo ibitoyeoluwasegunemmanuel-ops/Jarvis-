@@ -136,6 +136,21 @@ def connect_database() -> sqlite3.Connection:
         BEGIN
             SELECT RAISE(ABORT, 'project_decisions_are_append_only');
         END;
+        CREATE TABLE IF NOT EXISTS project_milestones (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            target_at REAL,
+            status TEXT NOT NULL DEFAULT 'planned'
+                CHECK (status IN ('planned', 'in_progress', 'completed', 'cancelled')),
+            completed_at REAL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS project_milestones_owner_project_target
+            ON project_milestones(owner_id, project_id, target_at);
         CREATE TABLE IF NOT EXISTS project_audit_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             actor_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
