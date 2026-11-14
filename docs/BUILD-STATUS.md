@@ -26,7 +26,8 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Project activity endpoint returns recent audit history; the UI displays the latest events.
 - Shared TypeScript contracts exist for specialist tasks, risk tiers, approvals, and evidence.
 - Owner-authenticated approval requests, approve/reject decisions, and project approval history are available through the gateway and desktop Projects UI. Approval nonces are retained in native Rust state and are not exposed to the webview.
-- A restricted in-process dispatcher currently allowlists only `project.task.create`. It re-checks actor scope and workspace, binds the single-use approval to the exact action/arguments/project, consumes it atomically, and rejects replay and cross-project use.
+- A restricted dispatcher currently allowlists only `project.task.create`. It re-checks actor scope and workspace, binds the single-use approval to the exact action/arguments/project, consumes it atomically, and rejects replay and cross-project use.
+- An owner-authenticated `/v1/execution/approved` route now derives the local owner identity and `projects:write` scope on the server; callers cannot submit actor identity or scopes. It accepts only a single-use approval ID, nonce, action, and exact arguments, then invokes the restricted dispatcher. This is owner-initiated approved execution, not autonomous agent execution.
 - Dispatcher execution start/success/failure events are appended to the immutable project audit log and included in the project activity timeline.
 - Fail-closed policy decision module covers actor, workspace, scope, target, and risk tier.
 - Initial PostgreSQL migration describes future multi-user workspaces, projects, tasks, decisions, memory, agent runs, approvals, and audit events.
@@ -34,7 +35,8 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 ### Not implemented yet
 
 - Trusted cloud identity/workspace membership, PostgreSQL connection, production RLS, cloud sync, or multi-user support.
-- Agent orchestration, model-provider connection, trusted agent identity/scope issuance, and specialist execution. The dispatcher is not yet connected to a live orchestrator or native execution command; approval records alone do not trigger execution.
+- The native Tauri bridge does not yet call `/v1/execution/approved`; nonce handoff from the Rust vault to this route and a deliberate desktop Execute control remain to be implemented and tested. The route is therefore not yet an end-to-end desktop workflow.
+- Agent orchestration, model-provider connection, trusted agent identity/scope issuance, and specialist execution. No autonomous agent execution is implemented.
 - Realtime voice, Nigerian-English speech evaluation, avatar rendering, screen/camera sharing.
 - Local computer operator, browser/file tools, and external integrations.
 - Monitoring workers, notifications, and background scheduling.
@@ -54,8 +56,8 @@ The gateway process token is a transport gate, not owner identity. Owner account
 
 ## Next integrated engineering targets
 
-1. Complete native approval lifecycle verification, including TTL-aware nonce cleanup and secure native-to-dispatcher handoff. Bind approvals to the exact action, canonical arguments, actor/workspace/target, expiry, and nonce; reject replay or changed arguments; append audit events. Approval is not execution.
-2. Add a constrained execution dispatcher that re-checks policy at execution time and only exposes explicitly allowlisted tools.
+1. Connect the fixed native Tauri execution command to `/v1/execution/approved`, retrieving the nonce only from the Rust vault; never expose it to React. Add an explicit desktop Execute action and integration tests.
+2. Bind approvals to trusted actor/workspace/target as well as exact action, canonical arguments, expiry, and nonce; reject replay or changed arguments; append audit events. Approval is not execution.
 3. Build orchestrator and specialist execution behind the shared policy and approval boundary.
 4. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
 5. Add voice, avatar, browser automation, and computer-use capabilities behind explicit permissions and tests.
