@@ -40,9 +40,8 @@ def _canonical_arguments(arguments: dict[str, Any]) -> tuple[str, str]:
 
 
 def _ensure_tables(connection) -> None:
-    connection.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS action_approvals (
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS action_approvals (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
@@ -58,15 +57,18 @@ def _ensure_tables(connection) -> None:
             expires_at REAL NOT NULL,
             decided_at REAL,
             consumed_at REAL
-        );
-        CREATE INDEX IF NOT EXISTS action_approvals_project_created
-            ON action_approvals(owner_id, project_id, created_at DESC);
-        CREATE TRIGGER IF NOT EXISTS action_approvals_no_delete
-        BEFORE DELETE ON action_approvals
-        BEGIN
-            SELECT RAISE(ABORT, 'action_approvals_are_append_only');
-        END;
-        """
+        )"""
+    )
+    connection.execute(
+        """CREATE INDEX IF NOT EXISTS action_approvals_project_created
+           ON action_approvals(owner_id, project_id, created_at DESC)"""
+    )
+    connection.execute(
+        """CREATE TRIGGER IF NOT EXISTS action_approvals_no_delete
+           BEFORE DELETE ON action_approvals
+           BEGIN
+               SELECT RAISE(ABORT, 'action_approvals_are_append_only');
+           END"""
     )
 
 
