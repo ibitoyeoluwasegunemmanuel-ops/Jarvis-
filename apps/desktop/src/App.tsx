@@ -85,6 +85,13 @@ type ProjectMemory = {
   content: string; source_ref: string; confidence: number | null; created_at: number;
 };
 
+type ProjectApproval = {
+  id: string; project_id: string; action: string; arguments: Record<string, unknown>;
+  arguments_hash: string; requester: string;
+  status: "pending" | "approved" | "denied" | "consumed" | "expired";
+  created_at: number; expires_at: number; decided_at: number | null; consumed_at: number | null;
+};
+
 type ProjectMilestone = {
   id: string;
   project_id: string;
@@ -239,6 +246,10 @@ export default function App() {
   const [milestonesByProject, setMilestonesByProject] = useState<Record<string, ProjectMilestone[]>>({});
   const [risksByProject, setRisksByProject] = useState<Record<string, ProjectRisk[]>>({});
   const [memoryByProject, setMemoryByProject] = useState<Record<string, ProjectMemory[]>>({});
+  const [approvalsByProject, setApprovalsByProject] = useState<Record<string, ProjectApproval[]>>({});
+  const [approvalAction, setApprovalAction] = useState("browser.navigate");
+  const [approvalArguments, setApprovalArguments] = useState('{\n  "url": "https://example.com"\n}');
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [riskTitle, setRiskTitle] = useState("");
   const [riskDescription, setRiskDescription] = useState("");
   const [riskSeverity, setRiskSeverity] = useState<ProjectRisk["severity"]>("medium");
@@ -461,17 +472,19 @@ export default function App() {
       && milestonesByProject[projectId]
       && risksByProject[projectId]
       && memoryByProject[projectId]
+      && approvalsByProject[projectId]
     ) return;
 
     setTasksLoadingProjectId(projectId);
     try {
-      const [tasks, activity, decisions, milestones, risks, memory] = await Promise.all([
+      const [tasks, activity, decisions, milestones, risks, memory, approvals] = await Promise.all([
         invoke<ProjectTask[]>("list_project_tasks", { projectId }),
         invoke<ProjectActivity[]>("list_project_activity", { projectId }),
         invoke<ProjectDecision[]>("list_project_decisions", { projectId }),
         invoke<ProjectMilestone[]>("list_project_milestones", { projectId }),
         invoke<ProjectRisk[]>("list_project_risks", { projectId }),
-        invoke<ProjectMemory[]>("list_project_memory", { projectId })
+        invoke<ProjectMemory[]>("list_project_memory", { projectId }),
+        invoke<ProjectApproval[]>("list_project_approvals", { projectId })
       ]);
       setTasksByProject(current => ({ ...current, [projectId]: tasks }));
       setActivityByProject(current => ({ ...current, [projectId]: activity }));
@@ -479,6 +492,7 @@ export default function App() {
       setMilestonesByProject(current => ({ ...current, [projectId]: milestones }));
       setRisksByProject(current => ({ ...current, [projectId]: risks }));
       setMemoryByProject(current => ({ ...current, [projectId]: memory }));
+      setApprovalsByProject(current => ({ ...current, [projectId]: approvals }));
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
@@ -699,6 +713,47 @@ export default function App() {
       await refreshProjectActivity(projectId);
     } catch {
       setTaskError("JARVIS could not save this memory entry.");
+    }
+  };
+
+  const submitProjectApproval = async (event: FormEvent<HTMLFormElement>, projectId: string) => {
+    event.preventDefault();
+    let parsed: Record<string, unknown>;
+    try {
+      const value: unknown = JSON.parse(approvalArguments);
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Arguments must be a JSON object.");
+      parsed = value as Record<string, unknown>;
+    } catch {
+      setTaskError("Approval arguments must be a valid JSON object.");
+      return;
+    }
+    setTaskError("");
+    try {
+      const created = await invoke<ProjectApproval>("create_project_approval", {
+        projectId, action: approvalAction.trim(), arguments: parsed, ttlSeconds: 300
+      });
+      const latest = await invoke<ProjectApproval[]>("list_project_approvals", { projectId });
+      setApprovalsByProject(current => ({ ...current, [projectId]: latest }));
+      await refreshProjectActivity(projectId);
+      setTaskError("");
+      void created;
+    } catch (error) {
+      setTaskError(String(error).includes("owner_session") ? "Your owner session expired. Sign in again." : "JARVIS could not create this approval request.");
+    }
+  };
+
+  const reviewProjectApproval = async (projectId: string, approvalId: string, approve: boolean) => {
+    setApprovalBusyId(approvalId);
+    setTaskError("");
+    try {
+      await invoke("decide_project_approval", { approvalId, approve });
+      const latest = await invoke<ProjectApproval[]>("list_project_approvals", { projectId });
+      setApprovalsByProject(current => ({ ...current, [projectId]: latest }));
+      await refreshProjectActivity(projectId);
+    } catch {
+      setTaskError("JARVIS could not record that approval decision.");
+    } finally {
+      setApprovalBusyId(null);
     }
   };
 
@@ -1064,6 +1119,34 @@ export default function App() {
                                     <details className="project-decision-item" key={item.id}>
                                       <summary><b>{item.category}</b><small>{new Date(item.created_at * 1000).toLocaleDateString()}</small></summary>
                                       <p>{item.content}</p>{item.source_ref && <small className="decision-source">Source: {item.source_ref}</small>}
+                                    </details>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="project-decisions">
+                              <div className="task-panel-heading">
+                                <div><span className="eyebrow">SECURITY CONTROL</span><b>Action approvals</b></div>
+                                <span>{(approvalsByProject[project.id] ?? []).filter(item => item.status === "pending").length} awaiting review</span>
+                              </div>
+                              <form className="decision-create-form" onSubmit={event => void submitProjectApproval(event, project.id)}>
+                                <input value={approvalAction} onChange={event => setApprovalAction(event.target.value)} maxLength={120} aria-label="Action identifier" placeholder="Action identifier" required />
+                                <textarea value={approvalArguments} onChange={event => setApprovalArguments(event.target.value)} rows={3} aria-label="Exact action arguments in JSON" placeholder="Exact action arguments as JSON" required />
+                                <button type="submit" disabled={!approvalAction.trim()}>Request approval</button>
+                              </form>
+                              {(approvalsByProject[project.id] ?? []).length === 0 ? <div className="task-empty">No approval requests recorded.</div> : (
+                                <div className="project-decision-list">
+                                  {(approvalsByProject[project.id] ?? []).map(item => (
+                                    <details className="project-decision-item" key={item.id}>
+                                      <summary><b>{item.action}</b><small>{item.status.replace("_", " ")}</small></summary>
+                                      <pre>{JSON.stringify(item.arguments, null, 2)}</pre>
+                                      <small className="decision-source">Expires: {new Date(item.expires_at * 1000).toLocaleString()}</small>
+                                      {item.status === "pending" && (
+                                        <div className="approval-actions">
+                                          <button type="button" disabled={approvalBusyId === item.id} onClick={() => void reviewProjectApproval(project.id, item.id, true)}>Approve</button>
+                                          <button type="button" disabled={approvalBusyId === item.id} onClick={() => void reviewProjectApproval(project.id, item.id, false)}>Reject</button>
+                                        </div>
+                                      )}
                                     </details>
                                   ))}
                                 </div>
