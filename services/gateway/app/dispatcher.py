@@ -82,11 +82,13 @@ def dispatch_approved_action(
     # Consumption is atomic and precedes execution. A failed handler never
     # makes the same approval replayable.
     try:
-        consumed = consume_approval(approval_id, action, arguments, nonce)
+        consumed = consume_approval(
+            approval_id, action, arguments, nonce, expected_project_id=project_id
+        )
     except ApprovalError as error:
         raise DispatchError(str(error)) from error
-    if consumed is None or consumed["project_id"] != project_id:
-        raise DispatchError("approval_project_binding_mismatch")
+    if consumed is None:
+        raise DispatchError("approval_not_found")
 
     result = handler(consumed["arguments"])
     return {
