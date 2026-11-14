@@ -374,11 +374,17 @@ def list_project_activity(project_id: str) -> list[dict[str, Any]]:
                     SELECT id FROM project_tasks
                     WHERE project_id = ? AND owner_id = 1
                 )
+            ) OR (
+                entity_type = 'decision'
+                AND entity_id IN (
+                    SELECT id FROM project_decisions
+                    WHERE project_id = ? AND owner_id = 1
+                )
             )
             ORDER BY occurred_at DESC, id DESC
             LIMIT 100
             """,
-            (project_id, project_id),
+            (project_id, project_id, project_id),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
