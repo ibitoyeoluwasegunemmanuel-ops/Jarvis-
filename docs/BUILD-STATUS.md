@@ -37,12 +37,12 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ## Validation status
 
-- Latest observed CI run: #92, run ID `43577495073`, commit `5a4743ea6b`.
+- Latest observed CI run: #93, run ID `43577694380`, commit `80edf47097`.
 - Desktop typecheck/build: passed.
 - Gateway Ruff lint: passed.
 - Gateway tests: **32 passed**, with one Starlette/httpx deprecation warning.
-- Windows native-shell job: still running at the time of this update. Do not treat the latest installer as verified or ready until the job completes and its artifact is confirmed.
-- An earlier Windows native-shell run successfully compiled the Rust desktop and smoke-tested the packaged gateway with owner setup/login/logout and project create/list. That earlier smoke test predates project-task commands.
+- Windows native-shell job: packaged gateway built successfully; the packaged smoke test passed transport authentication, owner setup/login/logout, project create/list/status, and project task create/list/status. The NSIS installer build and artifact upload are still running. Do not treat the installer as ready until both complete.
+- The run includes the latest native task commands and packaging workflow; no physical Windows-device installation validation or code signing has been done.
 
 ## Security boundaries and limitations
 
