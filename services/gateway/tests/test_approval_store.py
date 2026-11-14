@@ -4,6 +4,7 @@ from app.approval_store import (
     ApprovalError,
     consume_approval,
     decide_approval,
+    list_project_approvals,
     request_approval,
 )
 from app.owner_auth import setup_owner
@@ -66,3 +67,14 @@ def test_approval_validation_rejects_invalid_ttl_and_non_json(project):
         request_approval(project, "browser.navigate", {}, ttl_seconds=0)
     with pytest.raises(ApprovalError, match="arguments_invalid"):
         request_approval(project, "browser.navigate", {"bad": object()})
+
+
+def test_approval_history_lists_without_exposing_nonce(project):
+    requested = request_approval(project, "browser.navigate", {"url": "https://example.com"})
+    items = list_project_approvals(project)
+    assert items is not None
+    assert len(items) == 1
+    assert items[0]["id"] == requested["id"]
+    assert items[0]["status"] == "pending"
+    assert "nonce" not in items[0]
+    assert items[0]["arguments"] == {"url": "https://example.com"}
