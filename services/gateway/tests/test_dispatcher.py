@@ -1,6 +1,6 @@
 import pytest
 
-from app.approval_store import decide_approval, list_project_approvals, request_approval
+from app.approval_store import list_project_approvals, request_approval
 from app.dispatcher import DispatchError, dispatch_approved_action
 from app.owner_auth import setup_owner
 from app.policy import ActorContext
