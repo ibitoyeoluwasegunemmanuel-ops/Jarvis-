@@ -212,6 +212,7 @@ def decide_approval(approval_id: str, approve: bool) -> dict[str, Any] | None:
 
 def consume_approval(
     approval_id: str, action: str, arguments: dict[str, Any], nonce: str,
+    expected_project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Atomically consume an approved record for the exact action, args and nonce."""
     if not all(isinstance(value, str) and value and len(value) <= 256
@@ -232,6 +233,9 @@ def consume_approval(
         if row is None:
             connection.rollback()
             return None
+        if expected_project_id is not None and row["project_id"] != expected_project_id:
+            connection.rollback()
+            raise ApprovalError("approval_project_binding_mismatch")
         if row["status"] != "approved":
             connection.rollback()
             raise ApprovalError("approval_not_approved_or_already_used")
