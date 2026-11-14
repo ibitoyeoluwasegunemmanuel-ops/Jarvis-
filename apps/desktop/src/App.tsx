@@ -55,6 +55,15 @@ type ProjectTask = {
   updated_at: number;
 };
 
+type ProjectActivity = {
+  id: number;
+  event_type: string;
+  entity_type: string;
+  entity_id: string;
+  details_json: string;
+  occurred_at: number;
+};
+
 const gateway = import.meta.env.VITE_GATEWAY_URL ?? "http://127.0.0.1:8765";
 
 function readableAuthError(error: unknown): string {
@@ -192,6 +201,7 @@ export default function App() {
   const [updatingProjectId, setUpdatingProjectId] = useState<string | null>(null);
   const [activeTaskProjectId, setActiveTaskProjectId] = useState<string | null>(null);
   const [tasksByProject, setTasksByProject] = useState<Record<string, ProjectTask[]>>({});
+  const [activityByProject, setActivityByProject] = useState<Record<string, ProjectActivity[]>>({});
   const [tasksLoadingProjectId, setTasksLoadingProjectId] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
@@ -390,18 +400,22 @@ export default function App() {
 
     setActiveTaskProjectId(projectId);
     setTaskError("");
-    if (tasksByProject[projectId]) return;
+    if (tasksByProject[projectId] && activityByProject[projectId]) return;
 
     setTasksLoadingProjectId(projectId);
     try {
-      const tasks = await invoke<ProjectTask[]>("list_project_tasks", { projectId });
+      const [tasks, activity] = await Promise.all([
+        invoke<ProjectTask[]>("list_project_tasks", { projectId }),
+        invoke<ProjectActivity[]>("list_project_activity", { projectId })
+      ]);
       setTasksByProject(current => ({ ...current, [projectId]: tasks }));
+      setActivityByProject(current => ({ ...current, [projectId]: activity }));
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
         setAuthStatus(current => current ? { ...current, authenticated: false } : current);
       }
-      setTaskError("JARVIS could not load tasks for this project.");
+      setTaskError("JARVIS could not load tasks and activity for this project.");
     } finally {
       setTasksLoadingProjectId(null);
     }
@@ -660,6 +674,27 @@ export default function App() {
                                 ))}
                               </div>
                             )}
+                            <div className="project-activity">
+                              <div className="task-panel-heading">
+                                <div><span className="eyebrow">AUDIT TRAIL</span><b>Recent activity</b></div>
+                                <span>{(activityByProject[project.id] ?? []).length} events</span>
+                              </div>
+                              {(activityByProject[project.id] ?? []).length === 0 ? (
+                                <div className="task-empty">No project activity recorded yet.</div>
+                              ) : (
+                                <div className="project-activity-list">
+                                  {(activityByProject[project.id] ?? []).slice(0, 8).map(item => (
+                                    <div className="project-activity-row" key={item.id}>
+                                      <span className="activity-dot done"/>
+                                      <div>
+                                        <b>{item.event_type.replace(/[._]/g, " ")}</b>
+                                        <small>{item.entity_type} · {new Date(item.occurred_at * 1000).toLocaleString()}</small>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
