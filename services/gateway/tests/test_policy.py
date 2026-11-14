@@ -454,3 +454,146 @@ def test_project_status_update_returns_404_for_unknown_project(monkeypatch, tmp_
     )
     assert response.status_code == 404
 
+def test_project_task_create_list_and_audit_are_owner_scoped(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Drive Secure", "description": "Fleet platform"},
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+
+    denied = client.get(f"/v1/projects/{project_id}/tasks", headers=_process_headers())
+    assert denied.status_code == 401
+
+    created = client.post(
+        f"/v1/projects/{project_id}/tasks",
+        headers=headers,
+        json={"title": "Define device onboarding", "description": "Document the first-run flow"},
+    )
+    assert created.status_code == 201
+    task = created.json()
+    assert task["project_id"] == project_id
+    assert task["title"] == "Define device onboarding"
+    assert task["status"] == "open"
+    assert "owner_id" not in task
+
+    listed = client.get(f"/v1/projects/{project_id}/tasks", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json() == [task]
+
+    connection = connect_database()
+    try:
+        event = connection.execute(
+            "SELECT event_type, entity_type FROM project_audit_events WHERE entity_id = ?",
+            (task["id"],),
+        ).fetchone()
+        assert event["event_type"] == "task.created"
+        assert event["entity_type"] == "task"
+        with pytest.raises(sqlite3.IntegrityError, match="append_only"):
+            connection.execute(
+                "UPDATE project_audit_events SET details_json = '{}' WHERE entity_id = ?",
+                (task["id"],),
+            )
+        connection.rollback()
+    finally:
+        connection.close()
+
+
+def test_project_task_create_rejects_invalid_and_unknown_project(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Handly", "description": ""},
+    )
+    project_id = project.json()["id"]
+
+    invalid = client.post(
+        f"/v1/projects/{project_id}/tasks",
+        headers=headers,
+        json={"title": "   "},
+    )
+    assert invalid.status_code == 422
+
+    missing = client.post(
+        "/v1/projects/unknown-project/tasks",
+        headers=headers,
+        json={"title": "Must not be created"},
+    )
+    assert missing.status_code == 404
+
+    listing = client.get("/v1/projects/unknown-project/tasks", headers=headers)
+    assert listing.status_code == 404
+
+
+def test_project_task_status_changes_are_audited_once(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "CareLink Africa", "description": ""},
+    )
+    project_id = project.json()["id"]
+    created = client.post(
+        f"/v1/projects/{project_id}/tasks",
+        headers=headers,
+        json={"title": "Recruit first experts"},
+    )
+    task_id = created.json()["id"]
+
+    in_progress = client.patch(
+        f"/v1/tasks/{task_id}/status",
+        headers=headers,
+        json={"status": "in_progress"},
+    )
+    assert in_progress.status_code == 200
+    assert in_progress.json()["status"] == "in_progress"
+
+    same_status = client.patch(
+        f"/v1/tasks/{task_id}/status",
+        headers=headers,
+        json={"status": "in_progress"},
+    )
+    assert same_status.status_code == 200
+
+    invalid = client.patch(
+        f"/v1/tasks/{task_id}/status",
+        headers=headers,
+        json={"status": "deleted"},
+    )
+    assert invalid.status_code == 422
+
+    denied = client.patch(
+        f"/v1/tasks/{task_id}/status",
+        headers=_process_headers(),
+        json={"status": "done"},
+    )
+    assert denied.status_code == 401
+
+    connection = connect_database()
+    try:
+        events = connection.execute(
+            "SELECT event_type, details_json FROM project_audit_events "
+            "WHERE entity_id = ? ORDER BY id",
+            (task_id,),
+        ).fetchall()
+        assert [event["event_type"] for event in events] == [
+            "task.created",
+            "task.status_changed",
+        ]
+        assert '"from":"open"' in events[1]["details_json"]
+        assert '"to":"in_progress"' in events[1]["details_json"]
+    finally:
+        connection.close()
+
+
+def test_project_task_status_returns_not_found_for_unknown_task(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    response = client.patch(
+        "/v1/tasks/unknown-task/status",
+        headers=headers,
+        json={"status": "done"},
+    )
+    assert response.status_code == 404
