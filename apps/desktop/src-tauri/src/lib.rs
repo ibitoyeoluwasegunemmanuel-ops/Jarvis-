@@ -101,6 +101,26 @@ struct ProjectMilestoneRecord {
     updated_at: f64,
 }
 
+
+#[derive(Deserialize, Serialize)]
+struct ProjectRiskRecord {
+    id: String, project_id: String, title: String, description: String,
+    severity: String, mitigation: String, status: String, created_at: f64, updated_at: f64,
+}
+#[derive(Deserialize, Serialize)]
+struct ProjectMemoryRecord {
+    id: String, project_id: String, category: String, content: String,
+    source_ref: String, confidence: Option<f64>, created_at: f64,
+}
+#[derive(Serialize)]
+struct ProjectRiskCreatePayload<'a> {
+    title: &'a str, description: &'a str, severity: &'a str, mitigation: &'a str,
+}
+#[derive(Serialize)]
+struct ProjectMemoryCreatePayload<'a> {
+    category: &'a str, content: &'a str, source_ref: &'a str, confidence: Option<f64>,
+}
+
 #[derive(Serialize)]
 struct ProjectCreatePayload<'a> {
     name: &'a str,
@@ -368,6 +388,87 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
 
 /// Lists projects through the authenticated native bridge. The owner token is
 /// required and is attached in Rust; it is never sent to the webview.
+
+#[tauri::command]
+async fn list_project_risks(project_id: String, runtime: tauri::State<'_, GatewayRuntime>) -> Result<Vec<ProjectRiskRecord>, String> {
+    if !valid_workspace_id(&project_id) { return Err("project_id_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{project_id}/risks", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client.get(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if !response.status().is_success() { return Err(format!("project_risk_list_failed_{}", response.status().as_u16())); }
+        response.json::<Vec<ProjectRiskRecord>>().await.map_err(|_| "project_risk_list_response_invalid".into())
+    }.await;
+    token.zeroize(); result
+}
+
+#[tauri::command]
+async fn create_project_risk(project_id: String, title: String, description: String, severity: String, mitigation: String, runtime: tauri::State<'_, GatewayRuntime>) -> Result<ProjectRiskRecord, String> {
+    if !valid_workspace_id(&project_id) { return Err("project_id_invalid".into()); }
+    if title.trim().is_empty() || title.len() > 160 || description.len() > 2000 || mitigation.len() > 2000 || !["low","medium","high","critical"].contains(&severity.as_str()) { return Err("project_risk_details_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{project_id}/risks", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client.post(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).json(&ProjectRiskCreatePayload { title: &title, description: &description, severity: &severity, mitigation: &mitigation }).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if response.status() == reqwest::StatusCode::NOT_FOUND { return Err("project_not_found".into()); }
+        if !response.status().is_success() { return Err(format!("project_risk_create_failed_{}", response.status().as_u16())); }
+        response.json::<ProjectRiskRecord>().await.map_err(|_| "project_risk_create_response_invalid".into())
+    }.await;
+    token.zeroize(); result
+}
+
+#[tauri::command]
+async fn update_project_risk_status(risk_id: String, status: String, runtime: tauri::State<'_, GatewayRuntime>) -> Result<ProjectRiskRecord, String> {
+    if !valid_workspace_id(&risk_id) || !["open","mitigated","accepted","closed"].contains(&status.as_str()) { return Err("project_risk_status_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{risk_id}/status", gateway_url("/v1/risks"));
+        let response = client.patch(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).json(&ProjectMilestoneStatusPayload { status: &status }).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if response.status() == reqwest::StatusCode::NOT_FOUND { return Err("project_risk_not_found".into()); }
+        if !response.status().is_success() { return Err(format!("project_risk_status_failed_{}", response.status().as_u16())); }
+        response.json::<ProjectRiskRecord>().await.map_err(|_| "project_risk_status_response_invalid".into())
+    }.await;
+    token.zeroize(); result
+}
+
+#[tauri::command]
+async fn list_project_memory(project_id: String, runtime: tauri::State<'_, GatewayRuntime>) -> Result<Vec<ProjectMemoryRecord>, String> {
+    if !valid_workspace_id(&project_id) { return Err("project_id_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{project_id}/memory", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client.get(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if !response.status().is_success() { return Err(format!("project_memory_list_failed_{}", response.status().as_u16())); }
+        response.json::<Vec<ProjectMemoryRecord>>().await.map_err(|_| "project_memory_list_response_invalid".into())
+    }.await;
+    token.zeroize(); result
+}
+
+#[tauri::command]
+async fn create_project_memory(project_id: String, category: String, content: String, source_ref: String, confidence: Option<f64>, runtime: tauri::State<'_, GatewayRuntime>) -> Result<ProjectMemoryRecord, String> {
+    if !valid_workspace_id(&project_id) || content.trim().is_empty() || content.len() > 4000 || source_ref.len() > 1000 || !["fact","preference","decision","note","reference"].contains(&category.as_str()) || confidence.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)) { return Err("project_memory_details_invalid".into()); }
+    let client = gateway_client()?;
+    let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
+    let result = async {
+        let url = format!("{}/{project_id}/memory", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client.post(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).json(&ProjectMemoryCreatePayload { category: &category, content: &content, source_ref: &source_ref, confidence }).send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
+        if response.status() == reqwest::StatusCode::NOT_FOUND { return Err("project_not_found".into()); }
+        if !response.status().is_success() { return Err(format!("project_memory_create_failed_{}", response.status().as_u16())); }
+        response.json::<ProjectMemoryRecord>().await.map_err(|_| "project_memory_create_response_invalid".into())
+    }.await;
+    token.zeroize(); result
+}
+
+
 #[tauri::command]
 async fn list_projects(
     runtime: tauri::State<'_, GatewayRuntime>,
@@ -1053,7 +1154,12 @@ pub fn run() {
             create_project_decision,
             list_project_milestones,
             create_project_milestone,
-            update_project_milestone_status
+            update_project_milestone_status,
+            list_project_risks,
+            create_project_risk,
+            update_project_risk_status,
+            list_project_memory,
+            create_project_memory
         ])
         .setup(|app| {
             let token = new_session_token();
