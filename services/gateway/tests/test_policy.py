@@ -619,6 +619,12 @@ def test_project_activity_contains_audited_project_and_task_changes(monkeypatch,
         json={"status": "done"},
     )
     assert changed.status_code == 200
+    decision = client.post(
+        f"/v1/projects/{project_id}/decisions",
+        headers=headers,
+        json={"title": "Keep local-first", "decision": "Do not enable cloud sync yet."},
+    )
+    assert decision.status_code == 201
 
     denied = client.get(f"/v1/projects/{project_id}/activity", headers=_process_headers())
     assert denied.status_code == 401
@@ -627,6 +633,7 @@ def test_project_activity_contains_audited_project_and_task_changes(monkeypatch,
     assert activity.status_code == 200
     event_types = [event["event_type"] for event in activity.json()]
     assert event_types == [
+        "decision.recorded",
         "task.status_changed",
         "task.created",
         "project.created",
