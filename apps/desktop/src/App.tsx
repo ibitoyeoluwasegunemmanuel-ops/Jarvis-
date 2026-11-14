@@ -723,6 +723,12 @@ export default function App() {
       const value: unknown = JSON.parse(approvalArguments);
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Arguments must be a JSON object.");
       parsed = value as Record<string, unknown>;
+      if (approvalAction.trim() === "project.task.create") {
+        if (typeof parsed.title !== "string" || typeof parsed.description !== "string") {
+          throw new Error("Task approvals require title and description strings.");
+        }
+        parsed.project_id = projectId;
+      }
     } catch {
       setTaskError("Approval arguments must be a valid JSON object.");
       return;
