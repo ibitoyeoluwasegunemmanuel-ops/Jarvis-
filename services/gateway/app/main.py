@@ -88,8 +88,8 @@ app.add_middleware(
         "tauri://localhost",
     ],
     allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["Content-Type", "X-Jarvis-Session"],
+    allow_methods=["GET", "POST", "PATCH"],
+    allow_headers=["Content-Type", "X-Jarvis-Session", "X-Jarvis-Owner-Session"],
 )
 
 
