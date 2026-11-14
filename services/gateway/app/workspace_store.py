@@ -362,8 +362,8 @@ def list_project_activity(project_id: str) -> list[dict[str, Any]]:
 
     connection = connect_database()
     try:
-        from app.project_brain import _ensure_tables
         from app.approval_store import _ensure_tables as _ensure_approval_tables
+        from app.project_brain import _ensure_tables
 
         _ensure_tables(connection)
         _ensure_approval_tables(connection)
