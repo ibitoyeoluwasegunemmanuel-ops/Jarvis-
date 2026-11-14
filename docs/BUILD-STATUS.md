@@ -30,7 +30,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ### Not implemented yet
 
-- Desktop UI/native bridge for the newly added project risk register and project memory APIs.
+- Agent orchestration, model-provider connection, specialist execution, and actual approval issuance/consumption.
 - Trusted cloud identity/workspace membership, PostgreSQL connection, production RLS, cloud sync, or multi-user support.
 - Agent orchestration, model-provider connection, specialist execution, and actual approval issuance/consumption.
 - Realtime voice, Nigerian-English speech evaluation, avatar rendering, screen/camera sharing.
@@ -40,13 +40,14 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ## Validation status
 
-- Latest fully successful Windows packaging run: #100, run ID `43578241448`, commit `cfa3ee8b22`.
+- Latest completed checks for the current project-brain UI commit are being run in GitHub Actions run #133, ID `43580494417`, commit `64ea11d348939b3697615af759ebc837d7b5a5bf`. Desktop typecheck/build and gateway checks have passed; the native-shell packaged-gateway/Windows installer job is still running. [View run #133](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43580494417).
+- Latest fully successful Windows packaging run: #100, run ID `43578241448`, commit `cfa3ee8b22 (earlier baseline; it does not include the current project-brain work).
 - Desktop typecheck/build: passed.
 - Gateway Ruff lint: passed.
 - Gateway tests on run #100: **33 passed**, with one Starlette/httpx deprecation warning.
 - Windows native-shell job on run #100: passed Rust/native build, packaged-gateway health/authentication, owner setup/login/logout, project create/list/status, project-task create/list/status, project activity history smoke test, NSIS installer build, and artifact upload.
 - Verified Windows installer artifact: `jarvis-windows-x64-installer` (artifact ID `14107218567`, approximately 19.8 MB). [Open the successful run and download its artifact](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43578241448).
-- Run #123 validates project milestones plus the decision journal: Ruff passed, **37 gateway tests passed**, and desktop typecheck/build passed. Windows native-shell packaging and the expanded milestone smoke test are still running.
+
 - No physical Windows-device installation validation or code signing has been done.
 
 ## Security boundaries and limitations
@@ -55,10 +56,9 @@ The gateway process token is a transport gate, not owner identity. Owner account
 
 ## Next integrated engineering targets
 
-1. Complete Windows native-shell validation, packaged gateway smoke tests for task operations, and NSIS artifact verification.
-2. Connect the new project risk register and append-only project memory APIs to typed native commands and the desktop workspace.
-3. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
-4. Implement approval issuance and single-use consumption bound to exact action arguments.
-5. Add orchestrator and specialist execution behind the shared policy engine.
-6. Add voice, avatar, browser automation, and computer-use capabilities behind explicit permissions and tests.
-7. Commit a generated pnpm lockfile and use frozen dependency installation in CI.
+1. Complete run #133 native-shell verification, packaged gateway smoke tests for project risks/memory, and NSIS artifact verification.
+2. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
+3. Implement approval issuance and single-use consumption bound to exact action arguments.
+4. Add orchestrator and specialist execution behind the shared policy engine.
+5. Add voice, avatar, browser automation, and computer-use capabilities behind explicit permissions and tests.
+6. Commit a generated pnpm lockfile and use frozen dependency installation in CI.
