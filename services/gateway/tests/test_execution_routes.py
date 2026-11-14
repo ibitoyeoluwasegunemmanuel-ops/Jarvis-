@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.approval_store import decide_approval, request_approval
 from app.owner_auth import setup_owner
-from app.approval_store import request_approval, decide_approval
 from app.workspace_store import create_project, list_project_tasks
 
 
