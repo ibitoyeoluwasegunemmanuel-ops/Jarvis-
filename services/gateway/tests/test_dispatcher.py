@@ -4,7 +4,7 @@ from app.approval_store import list_project_approvals, request_approval
 from app.dispatcher import DispatchError, dispatch_approved_action
 from app.owner_auth import setup_owner
 from app.policy import ActorContext
-from app.workspace_store import create_project, list_project_tasks
+from app.workspace_store import create_project, list_project_activity, list_project_tasks
 
 
 @pytest.fixture
@@ -42,6 +42,9 @@ def test_dispatch_executes_only_exact_approved_allowlisted_action(workspace):
     assert result["status"] == "executed"
     assert result["result"]["title"] == "Verify worker onboarding"
     assert len(list_project_tasks(workspace)) == 1
+    execution_events = [event for event in list_project_activity(workspace) if event["entity_type"] == "action_execution"]
+    assert {event["event_type"] for event in execution_events} == {"action_execution.started", "action_execution.succeeded"}
+    assert all(approval["id"] in event["entity_id"] for event in execution_events)
     with pytest.raises(DispatchError, match="approval_not_approved_or_already_used"):
         dispatch_approved_action(
             actor, approval["id"], approval["nonce"], "project.task.create", arguments
