@@ -53,6 +53,7 @@ def _record_execution_event(
         "approval_id": approval_id,
         "action": action,
         "outcome": outcome,
+        "actor_id": actor_id,
         **(details or {}),
     }
     encoded = json.dumps(safe_details, sort_keys=True, separators=(",", ":"), allow_nan=False)
