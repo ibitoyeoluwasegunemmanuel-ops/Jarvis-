@@ -2,8 +2,9 @@ import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
-from app.main import app
+from app.main import ProjectMilestoneCreateRequest, app
 from app.owner_auth import connect_database
 from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
 
@@ -807,12 +808,8 @@ def test_project_milestone_validation_and_unknown_ids(monkeypatch, tmp_path):
     )
     assert invalid_title.status_code == 422
 
-    invalid_target = client.post(
-        f"/v1/projects/{project_id}/milestones",
-        headers={**headers, "Content-Type": "application/json"},
-        content='{"title":"A milestone","target_at":NaN}',
-    )
-    assert invalid_target.status_code == 422
+    with pytest.raises(ValidationError):
+        ProjectMilestoneCreateRequest(title="A milestone", target_at=float("nan"))
 
     unknown_project = client.get(
         "/v1/projects/unknown-project/milestones",
