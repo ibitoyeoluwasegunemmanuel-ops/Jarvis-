@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.approval_routes import router as approval_router
 from app.owner_auth import (
     InvalidOwnerCredentials,
     OwnerAlreadyConfigured,
@@ -49,6 +50,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url=None,
 )
+
+app.include_router(approval_router)
 
 
 @app.middleware("http")
