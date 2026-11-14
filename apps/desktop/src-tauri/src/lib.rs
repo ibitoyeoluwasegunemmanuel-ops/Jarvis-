@@ -66,6 +66,16 @@ struct ProjectTaskRecord {
     updated_at: f64,
 }
 
+#[derive(Deserialize, Serialize)]
+struct ProjectActivityRecord {
+    id: i64,
+    event_type: String,
+    entity_type: String,
+    entity_id: String,
+    details_json: String,
+    occurred_at: f64,
+}
+
 #[derive(Serialize)]
 struct ProjectCreatePayload<'a> {
     name: &'a str,
@@ -452,6 +462,57 @@ async fn list_project_tasks(
     result
 }
 
+/// Lists immutable project/task audit events through the owner-authenticated bridge.
+#[tauri::command]
+async fn list_project_activity(
+    project_id: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ProjectActivityRecord>, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!(
+            "{}/{project_id}/activity",
+            gateway_url(GATEWAY_PROJECTS_PATH)
+        );
+        let response = client
+            .get(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_activity_list_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<Vec<ProjectActivityRecord>>()
+            .await
+            .map_err(|_| "project_activity_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Creates a task in a project via a fixed typed gateway route.
 #[tauri::command]
 async fn create_project_task(
@@ -649,7 +710,8 @@ pub fn run() {
             update_project_status,
             list_project_tasks,
             create_project_task,
-            update_project_task_status
+            update_project_task_status,
+            list_project_activity
         ])
         .setup(|app| {
             let token = new_session_token();
