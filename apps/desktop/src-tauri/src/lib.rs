@@ -448,6 +448,80 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
 }
 
 
+#[derive(Serialize)]
+struct ApprovedExecutionPayload {
+    approval_id: String,
+    nonce: String,
+    action: String,
+    arguments: serde_json::Value,
+}
+
+#[tauri::command]
+async fn execute_approved_project_task(
+    approval_id: String,
+    project_id: String,
+    title: String,
+    description: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<serde_json::Value, String> {
+    if approval_id.trim().is_empty() || approval_id.len() > 64
+        || !valid_workspace_id(&project_id)
+        || title.trim().is_empty() || title.trim().len() > 160
+        || description.len() > 2000 {
+        return Err("approved_task_details_invalid".into());
+    }
+
+    let mut nonce = {
+        let mut vault = runtime.approval_nonces.lock()
+            .map_err(|_| "native_approval_vault_unavailable".to_string())?;
+        prune_expired_approval_nonces(&mut vault);
+        vault.remove(&approval_id)
+            .ok_or_else(|| "approval_nonce_unavailable_or_expired".to_string())?
+    };
+
+    let mut owner_token = runtime.owner_session.lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone().ok_or_else(|| "owner_session_required".to_string())?;
+
+    let arguments = serde_json::json!({
+        "project_id": project_id,
+        "title": title,
+        "description": description
+    });
+
+    let result = async {
+        let client = gateway_client()?;
+        let response = client.post(gateway_url("/v1/execution/approved"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ApprovedExecutionPayload {
+                approval_id,
+                nonce: nonce.value.clone(),
+                action: "project.task.create".to_string(),
+                arguments,
+            })
+            .send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".into());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("approval_or_project_not_found".into());
+        }
+        if response.status() == reqwest::StatusCode::CONFLICT {
+            return Err("approval_invalid_expired_or_already_used".into());
+        }
+        if !response.status().is_success() {
+            return Err(format!("approved_execution_failed_{}", response.status().as_u16()));
+        }
+        response.json::<serde_json::Value>().await
+            .map_err(|_| "approved_execution_response_invalid".to_string())
+    }.await;
+
+    nonce.value.zeroize();
+    owner_token.zeroize();
+    result
+}
+
 /// Lists projects through the authenticated native bridge. The owner token is
 /// required and is attached in Rust; it is never sent to the webview.
 
@@ -1301,7 +1375,8 @@ pub fn run() {
             create_project_memory,
             list_project_approvals,
             create_project_approval,
-            decide_project_approval
+            decide_project_approval,
+            execute_approved_project_task
         ])
         .setup(|app| {
             let token = new_session_token();
