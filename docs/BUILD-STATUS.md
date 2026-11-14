@@ -43,7 +43,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 ## Validation status
 
 - GitHub Actions run #133 (run ID `43580494417`, commit `64ea11d348939b3697615af759ebc837d7b5a5bf`): desktop, gateway, and native-shell jobs all **passed**; this remains the latest fully documented installer artifact.
-- Approval UI and API lifecycle were added in subsequent commits. Dispatcher tests exposed a missing test import in run #155; the import fix and execution-audit changes are in newer commits and await the current CI run. Do not treat those changes as verified until the latest run completes.
+- Approval UI and API lifecycle were added in subsequent commits. Run #162 (commit `79653a5f37b379b982ad7749cf5829c2dc03a936`) passed gateway and desktop jobs; its native-shell job was still running at the time of this update. Run #163 includes native nonce zeroization on rejection, logout, and runtime shutdown and is still running. Do not treat the latest native-shell changes as verified until run #163 completes.
 - Run #133 produced the `jarvis-windows-x64-installer` artifact (artifact ID `14107958293`, 19,906,991 bytes) and `jarvis-pnpm-lockfile` artifact. [View run #133 and its artifacts](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43580494417).
 - The successful native-shell job verifies the Windows build/package workflow in CI. It does not prove installation on the owner's physical Windows device.
 - No physical Windows-device installation validation or code signing has been done.
