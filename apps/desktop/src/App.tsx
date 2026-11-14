@@ -247,7 +247,7 @@ export default function App() {
   const [risksByProject, setRisksByProject] = useState<Record<string, ProjectRisk[]>>({});
   const [memoryByProject, setMemoryByProject] = useState<Record<string, ProjectMemory[]>>({});
   const [approvalsByProject, setApprovalsByProject] = useState<Record<string, ProjectApproval[]>>({});
-  const [approvalAction, setApprovalAction] = useState("browser.navigate");
+  const [approvalAction, setApprovalAction] = useState("project.task.create");
   const [approvalArguments, setApprovalArguments] = useState('{\n  "url": "https://example.com"\n}');
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [riskTitle, setRiskTitle] = useState("");
@@ -742,6 +742,23 @@ export default function App() {
     }
   };
 
+  const executeApprovedTask = async (projectId: string, approval: ProjectApproval) => {
+    const args = approval.arguments;
+    if (approval.action !== "project.task.create" || args.project_id !== projectId || typeof args.title !== "string" || typeof args.description !== "string") {
+      setTaskError("This approval is not a valid project task creation request."); return;
+    }
+    setApprovalBusyId(approval.id); setTaskError("");
+    try {
+      await invoke("execute_approved_project_task", { approvalId: approval.id, projectId, title: args.title, description: args.description });
+      const [tasks, approvals] = await Promise.all([invoke<ProjectTask[]>("list_project_tasks", { projectId }), invoke<ProjectApproval[]>("list_project_approvals", { projectId })]);
+      setTasksByProject(current => ({ ...current, [projectId]: tasks }));
+      setApprovalsByProject(current => ({ ...current, [projectId]: approvals }));
+      await refreshProjectActivity(projectId);
+    } catch (error) {
+      const detail = String(error);
+      setTaskError(detail.includes("approval_nonce") || detail.includes("approval_invalid") ? "The approval is no longer usable. Create a new approval request and approve it again." : "JARVIS could not execute this approved task.");
+    } finally { setApprovalBusyId(null); }
+  };
   const reviewProjectApproval = async (projectId: string, approvalId: string, approve: boolean) => {
     setApprovalBusyId(approvalId);
     setTaskError("");
@@ -1145,6 +1162,11 @@ export default function App() {
                                         <div className="approval-actions">
                                           <button type="button" disabled={approvalBusyId === item.id} onClick={() => void reviewProjectApproval(project.id, item.id, true)}>Approve</button>
                                           <button type="button" disabled={approvalBusyId === item.id} onClick={() => void reviewProjectApproval(project.id, item.id, false)}>Reject</button>
+                                        </div>
+                                      )}
+                                      {item.status === "approved" && item.action === "project.task.create" && (
+                                        <div className="approval-actions">
+                                          <button type="button" disabled={approvalBusyId === item.id} onClick={() => void executeApprovedTask(project.id, item)}>{approvalBusyId === item.id ? "Executing…" : "Execute approved task"}</button>
                                         </div>
                                       )}
                                     </details>
