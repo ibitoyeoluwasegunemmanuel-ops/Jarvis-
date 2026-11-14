@@ -16,7 +16,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 - Owner data and project/task records are stored in local SQLite under the user's application-data folder (or `JARVIS_DATA_DIR` in tests/CI).
 - Tauri 2 starts the packaged Python gateway sidecar with a fresh process token. The gateway binds to loopback only.
 - Owner session remains in Rust-managed native state. Fixed, typed commands handle authentication, capabilities, projects, tasks, decisions, milestones, risks, and project memory; the webview cannot choose arbitrary URLs, HTTP methods, headers, shell commands, or filesystem paths.
-- Native token copies are explicitly zeroized on use, logout, and runtime drop.
+- Native token copies are explicitly zeroized on use, logout, and runtime drop. Approval nonces are held only in Rust-managed memory, paired with their requested TTL, and pruned/zeroized on subsequent approval-vault access after expiry; rejection, logout, and runtime drop also clear them.
 - Projects support owner-protected list/create/read/status operations. Statuses: `active`, `paused`, `completed`.
 - Project tasks support owner-protected list/create/status operations. Statuses: `open`, `in_progress`, `done`.
 - Project and task creation/status changes append immutable audit events. SQLite triggers reject updates/deletes to audit events.
@@ -43,7 +43,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 ## Validation status
 
 - GitHub Actions run #133 (run ID `43580494417`, commit `64ea11d348939b3697615af759ebc837d7b5a5bf`): desktop, gateway, and native-shell jobs all **passed**; this remains the latest fully documented installer artifact.
-- Approval UI and API lifecycle were added in subsequent commits. Run #162 (commit `79653a5f37b379b982ad7749cf5829c2dc03a936`) passed gateway and desktop jobs; its native-shell job was still running at the time of this update. Run #163 includes native nonce zeroization on rejection, logout, and runtime shutdown and is still running. Do not treat the latest native-shell changes as verified until run #163 completes.
+- Approval UI and API lifecycle were added in subsequent commits. Run #162 (commit `79653a5f37b379b982ad7749cf5829c2dc03a936`) and run #163 (commit `be3811c8b52f4a11b700a1df1ac7a4288b9900fe`) had gateway and desktop jobs passed while native-shell was still running at the time of this update. Run #164 (commit `c1a7e7fc18b1aa99accb6faaffc6c6efa8e7f794`) adds TTL-aware native nonce pruning and is queued. Do not treat the latest native-shell changes as verified until their CI jobs complete.
 - Run #133 produced the `jarvis-windows-x64-installer` artifact (artifact ID `14107958293`, 19,906,991 bytes) and `jarvis-pnpm-lockfile` artifact. [View run #133 and its artifacts](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43580494417).
 - The successful native-shell job verifies the Windows build/package workflow in CI. It does not prove installation on the owner's physical Windows device.
 - No physical Windows-device installation validation or code signing has been done.
@@ -54,7 +54,7 @@ The gateway process token is a transport gate, not owner identity. Owner account
 
 ## Next integrated engineering targets
 
-1. Implement action-bound approval issuance and single-use consumption. Bind approvals to the exact action, canonical arguments, actor/workspace/target, expiry, and nonce; reject replay or changed arguments; append audit events. Approval is not execution.
+1. Complete native approval lifecycle verification, including TTL-aware nonce cleanup and secure native-to-dispatcher handoff. Bind approvals to the exact action, canonical arguments, actor/workspace/target, expiry, and nonce; reject replay or changed arguments; append audit events. Approval is not execution.
 2. Add a constrained execution dispatcher that re-checks policy at execution time and only exposes explicitly allowlisted tools.
 3. Build orchestrator and specialist execution behind the shared policy and approval boundary.
 4. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
