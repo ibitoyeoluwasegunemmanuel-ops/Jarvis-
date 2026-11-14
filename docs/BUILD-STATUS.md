@@ -37,7 +37,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 
 ## Validation status
 
-- Latest observed CI run: #87, run ID `43577495073`, commit `5a4743ea6b`.
+- Latest observed CI run: #92, run ID `43577495073`, commit `5a4743ea6b`.
 - Desktop typecheck/build: passed.
 - Gateway Ruff lint: passed.
 - Gateway tests: **32 passed**, with one Starlette/httpx deprecation warning.
