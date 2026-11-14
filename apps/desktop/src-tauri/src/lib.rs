@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent};
@@ -20,11 +20,28 @@ const GATEWAY_AUTH_LOGOUT_PATH: &str = "/v1/auth/logout";
 const GATEWAY_PROJECTS_PATH: &str = "/v1/projects";
 const GATEWAY_TASKS_PATH: &str = "/v1/tasks";
 
+struct ApprovalNonce {
+    value: String,
+    expires_at: Instant,
+}
+
+fn prune_expired_approval_nonces(vault: &mut HashMap<String, ApprovalNonce>) {
+    let now = Instant::now();
+    vault.retain(|_, entry| {
+        if entry.expires_at <= now {
+            entry.value.zeroize();
+            false
+        } else {
+            true
+        }
+    });
+}
+
 struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
     session_token: String,
     owner_session: Mutex<Option<String>>,
-    approval_nonces: Mutex<HashMap<String, String>>,
+    approval_nonces: Mutex<HashMap<String, ApprovalNonce>>,
 }
 
 #[derive(Serialize)]
@@ -393,7 +410,7 @@ async fn login_owner(
 #[tauri::command]
 async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), String> {
     if let Ok(mut vault) = runtime.approval_nonces.lock() {
-        for nonce in vault.values_mut() { nonce.zeroize(); }
+        for entry in vault.values_mut() { entry.value.zeroize(); }
         vault.clear();
     }
     let owner_session = runtime
@@ -545,8 +562,14 @@ async fn create_project_approval(project_id: String, action: String, arguments: 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
         if !response.status().is_success() { return Err(format!("approval_create_failed_{}", response.status().as_u16())); }
         let created = response.json::<ApprovalCreatedRecord>().await.map_err(|_| "approval_create_response_invalid".to_string())?;
-        runtime.approval_nonces.lock().map_err(|_| "native_approval_vault_unavailable".to_string())?
-            .insert(created.id.clone(), created.nonce);
+        {
+            let mut vault = runtime.approval_nonces.lock().map_err(|_| "native_approval_vault_unavailable".to_string())?;
+            prune_expired_approval_nonces(&mut vault);
+            vault.insert(created.id.clone(), ApprovalNonce {
+                value: created.nonce,
+                expires_at: Instant::now() + Duration::from_secs(u64::from(ttl_seconds)),
+            });
+        }
         Ok(ApprovalRecord {
             id: created.id, project_id: created.project_id, action: created.action,
             arguments: created.arguments, arguments_hash: created.arguments_hash,
@@ -572,7 +595,8 @@ async fn decide_project_approval(approval_id: String, approve: bool, runtime: ta
         let value = response.json::<serde_json::Value>().await.map_err(|_| "approval_decision_response_invalid".to_string())?;
         if !approve {
             if let Ok(mut vault) = runtime.approval_nonces.lock() {
-                if let Some(mut nonce) = vault.remove(&approval_id) { nonce.zeroize(); }
+                prune_expired_approval_nonces(&mut vault);
+                if let Some(mut entry) = vault.remove(&approval_id) { entry.value.zeroize(); }
             }
         }
         Ok(value)
@@ -1346,7 +1370,7 @@ impl Drop for GatewayRuntime {
             }
         }
         if let Ok(vault) = self.approval_nonces.get_mut() {
-            for nonce in vault.values_mut() { nonce.zeroize(); }
+            for entry in vault.values_mut() { entry.value.zeroize(); }
             vault.clear();
         }
     }
