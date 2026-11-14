@@ -1,10 +1,10 @@
 import os
 import secrets
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
