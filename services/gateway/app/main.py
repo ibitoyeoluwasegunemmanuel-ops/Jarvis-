@@ -18,7 +18,7 @@ from app.owner_auth import (
     revoke_owner_session,
     setup_owner,
 )
-from app.workspace_store import (
+from app.project_brain import (\n    create_project_memory,\n    create_project_risk,\n    list_project_memory,\n    list_project_risks,\n    update_project_risk_status,\n)\nfrom app.workspace_store import (
     create_project,
     create_project_decision,
     create_project_milestone,
@@ -107,7 +107,7 @@ async def capabilities(request: Request) -> dict[str, object]:
             "agent_execution": False,
             "computer_use": False,
             "voice": False,
-            "persistent_memory": False,
+            "persistent_memory": True,\n            "project_risk_register": True,
         },
         "security": {
             "default_policy": "deny_without_identity_and_scope",
@@ -399,3 +399,96 @@ def project_task_status_update(
         raise HTTPException(status_code=404, detail="project_task_not_found")
     return task
 
+
+
+class ProjectRiskCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    severity: Literal["low", "medium", "high", "critical"]
+    mitigation: str = Field(default="", max_length=2000)
+
+
+class ProjectRiskStatusRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    status: Literal["open", "mitigated", "accepted", "closed"]
+
+
+class ProjectMemoryCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    category: Literal["fact", "preference", "decision", "note", "reference"]
+    content: str = Field(min_length=1, max_length=4000)
+    source_ref: str = Field(default="", max_length=1000)
+    confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+
+
+@app.get("/v1/projects/{project_id}/risks", tags=["projects"])
+def project_risks_list(
+    project_id: str, _: None = Depends(require_owner_session)
+) -> list[dict[str, object]]:
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return list_project_risks(project_id)
+
+
+@app.post("/v1/projects/{project_id}/risks", tags=["projects"], status_code=201)
+def project_risk_create(
+    project_id: str,
+    payload: ProjectRiskCreateRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    try:
+        risk = create_project_risk(
+            project_id, payload.title, payload.description,
+            payload.severity, payload.mitigation
+        )
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if risk is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return risk
+
+
+@app.patch("/v1/risks/{risk_id}/status", tags=["projects"])
+def project_risk_status_update(
+    risk_id: str,
+    payload: ProjectRiskStatusRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    try:
+        risk = update_project_risk_status(risk_id, payload.status)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if risk is None:
+        raise HTTPException(status_code=404, detail="project_risk_not_found")
+    return risk
+
+
+@app.get("/v1/projects/{project_id}/memory", tags=["projects"])
+def project_memory_list(
+    project_id: str, _: None = Depends(require_owner_session)
+) -> list[dict[str, object]]:
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return list_project_memory(project_id)
+
+
+@app.post("/v1/projects/{project_id}/memory", tags=["projects"], status_code=201)
+def project_memory_create(
+    project_id: str,
+    payload: ProjectMemoryCreateRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    try:
+        item = create_project_memory(
+            project_id, payload.category, payload.content,
+            payload.source_ref, payload.confidence
+        )
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if item is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return item
