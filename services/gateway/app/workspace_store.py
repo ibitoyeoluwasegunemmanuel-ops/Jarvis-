@@ -362,6 +362,9 @@ def list_project_activity(project_id: str) -> list[dict[str, Any]]:
 
     connection = connect_database()
     try:
+        from app.project_brain import _ensure_tables
+
+        _ensure_tables(connection)
         rows = connection.execute(
             """
             SELECT id, event_type, entity_type, entity_id, details_json, occurred_at
