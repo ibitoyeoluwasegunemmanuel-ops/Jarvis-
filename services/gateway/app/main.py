@@ -24,7 +24,8 @@ from app.project_brain import (
     list_project_memory,
     list_project_risks,
     update_project_risk_status,
-)\nfrom app.workspace_store import (
+)
+from app.workspace_store import (
     create_project,
     create_project_decision,
     create_project_milestone,
@@ -113,7 +114,8 @@ async def capabilities(request: Request) -> dict[str, object]:
             "agent_execution": False,
             "computer_use": False,
             "voice": False,
-            "persistent_memory": True,\n            "project_risk_register": True,
+            "persistent_memory": True,
+            "project_risk_register": True,
         },
         "security": {
             "default_policy": "deny_without_identity_and_scope",
