@@ -534,6 +534,10 @@ async fn create_project_memory(project_id: String, category: String, content: St
 #[tauri::command]
 async fn list_project_approvals(project_id: String, runtime: tauri::State<'_, GatewayRuntime>) -> Result<Vec<ApprovalRecord>, String> {
     if !valid_workspace_id(&project_id) { return Err("project_id_invalid".into()); }
+    {
+        let mut vault = runtime.approval_nonces.lock().map_err(|_| "native_approval_vault_unavailable".to_string())?;
+        prune_expired_approval_nonces(&mut vault);
+    }
     let client = gateway_client()?;
     let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
     let result = async {
@@ -1350,6 +1354,12 @@ pub fn run() {
                         token.zeroize();
                     }
                     owner_session.take();
+                }
+                if let Ok(mut vault) = runtime.approval_nonces.lock() {
+                    for entry in vault.values_mut() {
+                        entry.value.zeroize();
+                    }
+                    vault.clear();
                 }
                 if let Ok(mut child_guard) = runtime.child.lock() {
                     if let Some(child) = child_guard.take() {
