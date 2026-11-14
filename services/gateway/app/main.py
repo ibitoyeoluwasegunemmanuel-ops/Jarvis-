@@ -20,9 +20,11 @@ from app.owner_auth import (
 )
 from app.workspace_store import (
     create_project,
+    create_project_decision,
     create_project_task,
     get_project,
     list_project_activity,
+    list_project_decisions,
     list_project_tasks,
     list_projects,
     update_project_status,
@@ -230,6 +232,15 @@ class ProjectTaskStatusRequest(BaseModel):
     status: Literal["open", "in_progress", "done"]
 
 
+class ProjectDecisionCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=160)
+    decision: str = Field(min_length=1, max_length=4000)
+    rationale: str = Field(default="", max_length=4000)
+    source_ref: str = Field(default="", max_length=1000)
+
+
 @app.patch("/v1/projects/{project_id}/status", tags=["projects"])
 def project_status_update(
     project_id: str,
@@ -265,6 +276,40 @@ def project_activity_list(
     if get_project(project_id) is None:
         raise HTTPException(status_code=404, detail="project_not_found")
     return list_project_activity(project_id)
+
+
+
+@app.get("/v1/projects/{project_id}/decisions", tags=["projects"])
+def project_decisions_list(
+    project_id: str,
+    _: None = Depends(require_owner_session),
+) -> list[dict[str, object]]:
+    """List immutable decisions recorded for one owner project."""
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return list_project_decisions(project_id)
+
+
+@app.post("/v1/projects/{project_id}/decisions", tags=["projects"], status_code=201)
+def project_decision_create(
+    project_id: str,
+    payload: ProjectDecisionCreateRequest,
+    _: None = Depends(require_owner_session),
+) -> dict[str, object]:
+    """Record an immutable project decision with rationale and optional source."""
+    try:
+        decision = create_project_decision(
+            project_id,
+            payload.title,
+            payload.decision,
+            payload.rationale,
+            payload.source_ref,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if decision is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return decision
 
 
 @app.post("/v1/projects/{project_id}/tasks", tags=["projects"], status_code=201)
