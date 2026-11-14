@@ -725,3 +725,111 @@ def test_project_decision_requires_text_and_existing_project(monkeypatch, tmp_pa
         json={"title": "A choice", "decision": "A decision"},
     )
     assert missing.status_code == 404
+
+def test_project_milestones_are_owner_scoped_and_audited(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Drive Secure", "description": ""},
+    )
+    project_id = project.json()["id"]
+
+    denied = client.get(
+        f"/v1/projects/{project_id}/milestones",
+        headers=_process_headers(),
+    )
+    assert denied.status_code == 401
+
+    target_at = 1_900_000_000.0
+    created = client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=headers,
+        json={
+            "title": "Complete vehicle device pilot",
+            "description": "Validate dashcam onboarding with a small fleet.",
+            "target_at": target_at,
+        },
+    )
+    assert created.status_code == 201
+    milestone = created.json()
+    assert milestone["project_id"] == project_id
+    assert milestone["status"] == "planned"
+    assert milestone["target_at"] == target_at
+
+    listed = client.get(
+        f"/v1/projects/{project_id}/milestones",
+        headers=headers,
+    )
+    assert listed.status_code == 200
+    assert listed.json() == [milestone]
+
+    started = client.patch(
+        f"/v1/milestones/{milestone['id']}/status",
+        headers=headers,
+        json={"status": "in_progress"},
+    )
+    assert started.status_code == 200
+    assert started.json()["status"] == "in_progress"
+    assert started.json()["completed_at"] is None
+
+    completed = client.patch(
+        f"/v1/milestones/{milestone['id']}/status",
+        headers=headers,
+        json={"status": "completed"},
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["completed_at"] is not None
+
+    activity = client.get(
+        f"/v1/projects/{project_id}/activity",
+        headers=headers,
+    )
+    assert activity.status_code == 200
+    assert [item["event_type"] for item in activity.json()].count("milestone.created") == 1
+    assert [item["event_type"] for item in activity.json()].count("milestone.status_changed") == 2
+
+
+def test_project_milestone_validation_and_unknown_ids(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Handly", "description": ""},
+    )
+    project_id = project.json()["id"]
+
+    invalid_title = client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=headers,
+        json={"title": "   "},
+    )
+    assert invalid_title.status_code == 422
+
+    invalid_target = client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=headers,
+        json={"title": "A milestone", "target_at": float("nan")},
+    )
+    assert invalid_target.status_code == 422
+
+    unknown_project = client.get(
+        "/v1/projects/unknown-project/milestones",
+        headers=headers,
+    )
+    assert unknown_project.status_code == 404
+
+    unknown_milestone = client.patch(
+        "/v1/milestones/unknown-milestone/status",
+        headers=headers,
+        json={"status": "completed"},
+    )
+    assert unknown_milestone.status_code == 404
+
+    invalid_status = client.patch(
+        "/v1/milestones/unknown-milestone/status",
+        headers=headers,
+        json={"status": "deleted"},
+    )
+    assert invalid_status.status_code == 422
