@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.approval_store import ApprovalError, decide_approval, request_approval
+from app.approval_store import ApprovalError, decide_approval, list_project_approvals, request_approval
 from app.owner_auth import owner_session_is_valid
 
 router = APIRouter(prefix="/v1/approvals", tags=["approvals"])
@@ -34,6 +34,14 @@ class ApprovalDecision(BaseModel):
     model_config = {"extra": "forbid"}
 
     approve: bool
+
+
+@router.get("/{project_id}", dependencies=[Depends(_require_owner)])
+def approvals_for_project(project_id: str) -> list[dict[str, Any]]:
+    result = list_project_approvals(project_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return result
 
 
 @router.post("", status_code=201, dependencies=[Depends(_require_owner)])
