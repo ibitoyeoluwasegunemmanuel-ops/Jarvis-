@@ -97,3 +97,28 @@ def test_dispatch_rejects_tampered_arguments_and_wrong_nonce(workspace):
             actor, approval["id"], "wrong-nonce", "project.task.create", arguments
         )
     assert len(list_project_tasks(workspace)) == 0
+
+
+def test_dispatch_rejects_approval_from_different_project_before_consumption(
+    workspace, monkeypatch, tmp_path
+):
+    from app.approval_store import decide_approval, request_approval, list_project_approvals
+
+    other_project = create_project("Different Workspace")
+    arguments = {"project_id": other_project["id"], "title": "Wrong project task"}
+    created = request_approval(
+        workspace, "project.task.create", arguments,
+        requester="agent:orchestrator", ttl_seconds=300,
+    )
+    decide_approval(created["id"], True)
+    actor = ActorContext(
+        "agent:orchestrator", other_project["id"], frozenset({"projects:write"})
+    )
+
+    with pytest.raises(DispatchError, match="approval_project_binding_mismatch"):
+        dispatch_approved_action(
+            actor, created["id"], created["nonce"], "project.task.create", arguments
+        )
+
+    assert list_project_approvals(workspace)[0]["status"] == "approved"
+    assert list_project_tasks(other_project["id"]) == []
