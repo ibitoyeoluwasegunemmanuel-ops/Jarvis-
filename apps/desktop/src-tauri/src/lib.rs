@@ -392,6 +392,10 @@ async fn login_owner(
 /// Revokes the native owner session and clears it from process memory.
 #[tauri::command]
 async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), String> {
+    if let Ok(mut vault) = runtime.approval_nonces.lock() {
+        for nonce in vault.values_mut() { nonce.zeroize(); }
+        vault.clear();
+    }
     let owner_session = runtime
         .owner_session
         .lock()
@@ -567,7 +571,9 @@ async fn decide_project_approval(approval_id: String, approve: bool, runtime: ta
         if !response.status().is_success() { return Err(format!("approval_decision_failed_{}", response.status().as_u16())); }
         let value = response.json::<serde_json::Value>().await.map_err(|_| "approval_decision_response_invalid".to_string())?;
         if !approve {
-            if let Ok(mut vault) = runtime.approval_nonces.lock() { vault.remove(&approval_id); }
+            if let Ok(mut vault) = runtime.approval_nonces.lock() {
+                if let Some(mut nonce) = vault.remove(&approval_id) { nonce.zeroize(); }
+            }
         }
         Ok(value)
     }.await;
@@ -1338,6 +1344,10 @@ impl Drop for GatewayRuntime {
             if let Some(token) = owner_session.as_mut() {
                 token.zeroize();
             }
+        }
+        if let Ok(vault) = self.approval_nonces.get_mut() {
+            for nonce in vault.values_mut() { nonce.zeroize(); }
+            vault.clear();
         }
     }
 }
