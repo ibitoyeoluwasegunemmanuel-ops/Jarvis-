@@ -10,8 +10,8 @@ from collections.abc import Callable
 from typing import Any
 
 from app.approval_store import ApprovalError, consume_approval
-from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
 from app.owner_auth import connect_database
+from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
 from app.workspace_store import create_project_task, get_project
 
 MAX_DISPATCH_ARGUMENTS = 16_000
