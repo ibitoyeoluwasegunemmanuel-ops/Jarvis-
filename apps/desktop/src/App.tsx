@@ -75,6 +75,16 @@ type ProjectDecision = {
   created_at: number;
 };
 
+type ProjectRisk = {
+  id: string; project_id: string; title: string; description: string;
+  severity: "low" | "medium" | "high" | "critical"; mitigation: string;
+  status: "open" | "mitigated" | "accepted" | "closed"; created_at: number; updated_at: number;
+};
+type ProjectMemory = {
+  id: string; project_id: string; category: "fact" | "preference" | "decision" | "note" | "reference";
+  content: string; source_ref: string; confidence: number | null; created_at: number;
+};
+
 type ProjectMilestone = {
   id: string;
   project_id: string;
@@ -227,6 +237,15 @@ export default function App() {
   const [activityByProject, setActivityByProject] = useState<Record<string, ProjectActivity[]>>({});
   const [decisionsByProject, setDecisionsByProject] = useState<Record<string, ProjectDecision[]>>({});
   const [milestonesByProject, setMilestonesByProject] = useState<Record<string, ProjectMilestone[]>>({});
+  const [risksByProject, setRisksByProject] = useState<Record<string, ProjectRisk[]>>({});
+  const [memoryByProject, setMemoryByProject] = useState<Record<string, ProjectMemory[]>>({});
+  const [riskTitle, setRiskTitle] = useState("");
+  const [riskDescription, setRiskDescription] = useState("");
+  const [riskSeverity, setRiskSeverity] = useState<ProjectRisk["severity"]>("medium");
+  const [riskMitigation, setRiskMitigation] = useState("");
+  const [memoryCategory, setMemoryCategory] = useState<ProjectMemory["category"]>("fact");
+  const [memoryContent, setMemoryContent] = useState("");
+  const [memorySourceRef, setMemorySourceRef] = useState("");
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [milestoneDescription, setMilestoneDescription] = useState("");
   const [milestoneTargetDate, setMilestoneTargetDate] = useState("");
@@ -440,20 +459,26 @@ export default function App() {
       && activityByProject[projectId]
       && decisionsByProject[projectId]
       && milestonesByProject[projectId]
+      && risksByProject[projectId]
+      && memoryByProject[projectId]
     ) return;
 
     setTasksLoadingProjectId(projectId);
     try {
-      const [tasks, activity, decisions, milestones] = await Promise.all([
+      const [tasks, activity, decisions, milestones, risks, memory] = await Promise.all([
         invoke<ProjectTask[]>("list_project_tasks", { projectId }),
         invoke<ProjectActivity[]>("list_project_activity", { projectId }),
         invoke<ProjectDecision[]>("list_project_decisions", { projectId }),
-        invoke<ProjectMilestone[]>("list_project_milestones", { projectId })
+        invoke<ProjectMilestone[]>("list_project_milestones", { projectId }),
+        invoke<ProjectRisk[]>("list_project_risks", { projectId }),
+        invoke<ProjectMemory[]>("list_project_memory", { projectId })
       ]);
       setTasksByProject(current => ({ ...current, [projectId]: tasks }));
       setActivityByProject(current => ({ ...current, [projectId]: activity }));
       setDecisionsByProject(current => ({ ...current, [projectId]: decisions }));
       setMilestonesByProject(current => ({ ...current, [projectId]: milestones }));
+      setRisksByProject(current => ({ ...current, [projectId]: risks }));
+      setMemoryByProject(current => ({ ...current, [projectId]: memory }));
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
@@ -632,6 +657,48 @@ export default function App() {
       }
     } finally {
       setSavingDecisionProjectId(null);
+    }
+  };
+
+  const submitProjectRisk = async (event: FormEvent<HTMLFormElement>, projectId: string) => {
+    event.preventDefault();
+    if (!riskTitle.trim()) return;
+    try {
+      const item = await invoke<ProjectRisk>("create_project_risk", {
+        projectId, title: riskTitle.trim(), description: riskDescription.trim(),
+        severity: riskSeverity, mitigation: riskMitigation.trim()
+      });
+      setRisksByProject(current => ({ ...current, [projectId]: [item, ...(current[projectId] ?? [])] }));
+      setRiskTitle(""); setRiskDescription(""); setRiskMitigation("");
+      await refreshProjectActivity(projectId);
+    } catch {
+      setTaskError("JARVIS could not save this project risk.");
+    }
+  };
+
+  const changeProjectRiskStatus = async (projectId: string, riskId: string, status: ProjectRisk["status"]) => {
+    try {
+      const updated = await invoke<ProjectRisk>("update_project_risk_status", { riskId, status });
+      setRisksByProject(current => ({ ...current, [projectId]: (current[projectId] ?? []).map(item => item.id === riskId ? updated : item) }));
+      await refreshProjectActivity(projectId);
+    } catch {
+      setTaskError("JARVIS could not update this risk.");
+    }
+  };
+
+  const submitProjectMemory = async (event: FormEvent<HTMLFormElement>, projectId: string) => {
+    event.preventDefault();
+    if (!memoryContent.trim()) return;
+    try {
+      const item = await invoke<ProjectMemory>("create_project_memory", {
+        projectId, category: memoryCategory, content: memoryContent.trim(),
+        sourceRef: memorySourceRef.trim(), confidence: null
+      });
+      setMemoryByProject(current => ({ ...current, [projectId]: [item, ...(current[projectId] ?? [])] }));
+      setMemoryContent(""); setMemorySourceRef("");
+      await refreshProjectActivity(projectId);
+    } catch {
+      setTaskError("JARVIS could not save this memory entry.");
     }
   };
 
@@ -947,6 +1014,57 @@ export default function App() {
                                         <option value="cancelled">Cancelled</option>
                                       </select>
                                     </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="project-decisions">
+                              <div className="task-panel-heading">
+                                <div><span className="eyebrow">RISK MANAGEMENT</span><b>Project risk register</b></div>
+                                <span>{(risksByProject[project.id] ?? []).length} tracked</span>
+                              </div>
+                              <form className="decision-create-form" onSubmit={event => void submitProjectRisk(event, project.id)}>
+                                <input value={riskTitle} onChange={event => setRiskTitle(event.target.value)} maxLength={160} placeholder="Risk title" required />
+                                <textarea value={riskDescription} onChange={event => setRiskDescription(event.target.value)} maxLength={2000} rows={2} placeholder="Describe the risk" />
+                                <select value={riskSeverity} onChange={event => setRiskSeverity(event.target.value as ProjectRisk["severity"])} aria-label="Risk severity">
+                                  <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+                                </select>
+                                <input value={riskMitigation} onChange={event => setRiskMitigation(event.target.value)} maxLength={2000} placeholder="Mitigation plan (optional)" />
+                                <button type="submit" disabled={!riskTitle.trim()}>Add risk</button>
+                              </form>
+                              {(risksByProject[project.id] ?? []).length === 0 ? <div className="task-empty">No risks recorded.</div> : (
+                                <div className="milestone-list">
+                                  {(risksByProject[project.id] ?? []).map(item => (
+                                    <div className="milestone-row" key={item.id}>
+                                      <div className="milestone-copy"><b>{item.title} · {item.severity}</b>{item.description && <span>{item.description}</span>}{item.mitigation && <small>Mitigation: {item.mitigation}</small>}</div>
+                                      <select value={item.status} aria-label={`Status for risk ${item.title}`} onChange={event => void changeProjectRiskStatus(project.id, item.id, event.target.value as ProjectRisk["status"])}>
+                                        <option value="open">Open</option><option value="mitigated">Mitigated</option><option value="accepted">Accepted</option><option value="closed">Closed</option>
+                                      </select>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="project-decisions">
+                              <div className="task-panel-heading">
+                                <div><span className="eyebrow">PERSISTENT PROJECT BRAIN</span><b>Project memory</b></div>
+                                <span>{(memoryByProject[project.id] ?? []).length} entries</span>
+                              </div>
+                              <form className="decision-create-form" onSubmit={event => void submitProjectMemory(event, project.id)}>
+                                <select value={memoryCategory} onChange={event => setMemoryCategory(event.target.value as ProjectMemory["category"])} aria-label="Memory category">
+                                  <option value="fact">Fact</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="note">Note</option><option value="reference">Reference</option>
+                                </select>
+                                <textarea value={memoryContent} onChange={event => setMemoryContent(event.target.value)} maxLength={4000} rows={3} placeholder="Record a useful project fact, preference, note or reference" required />
+                                <input value={memorySourceRef} onChange={event => setMemorySourceRef(event.target.value)} maxLength={1000} placeholder="Source reference (optional)" />
+                                <button type="submit" disabled={!memoryContent.trim()}>Save memory</button>
+                              </form>
+                              {(memoryByProject[project.id] ?? []).length === 0 ? <div className="task-empty">No persistent memory entries yet.</div> : (
+                                <div className="project-decision-list">
+                                  {(memoryByProject[project.id] ?? []).map(item => (
+                                    <details className="project-decision-item" key={item.id}>
+                                      <summary><b>{item.category}</b><small>{new Date(item.created_at * 1000).toLocaleDateString()}</small></summary>
+                                      <p>{item.content}</p>{item.source_ref && <small className="decision-source">Source: {item.source_ref}</small>}
+                                    </details>
                                   ))}
                                 </div>
                               )}
