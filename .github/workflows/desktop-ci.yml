@@ -161,6 +161,11 @@ jobs:
             if ($updatedTask.status -ne "in_progress") {
               throw "Packaged gateway did not update project task status"
             }
+            $activity = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/projects/$($project.id)/activity" -Headers $ownerHeaders -TimeoutSec 5
+            $activityTypes = @($activity | ForEach-Object { $_.event_type })
+            if ($activityTypes -notcontains "project.created" -or $activityTypes -notcontains "task.created" -or $activityTypes -notcontains "task.status_changed") {
+              throw "Packaged gateway did not return the project/task audit trail"
+            }
 
             $loginBody = @{ password = $setupPassword } | ConvertTo-Json -Compress
             $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/login" -Headers $headers -ContentType "application/json" -Body $loginBody -TimeoutSec 10
