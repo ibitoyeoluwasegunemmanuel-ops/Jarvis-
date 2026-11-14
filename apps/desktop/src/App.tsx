@@ -64,6 +64,17 @@ type ProjectActivity = {
   occurred_at: number;
 };
 
+type ProjectDecision = {
+  id: string;
+  project_id: string;
+  title: string;
+  decision: string;
+  rationale: string;
+  source_ref: string;
+  decided_at: number;
+  created_at: number;
+};
+
 const gateway = import.meta.env.VITE_GATEWAY_URL ?? "http://127.0.0.1:8765";
 
 function readableAuthError(error: unknown): string {
@@ -202,6 +213,12 @@ export default function App() {
   const [activeTaskProjectId, setActiveTaskProjectId] = useState<string | null>(null);
   const [tasksByProject, setTasksByProject] = useState<Record<string, ProjectTask[]>>({});
   const [activityByProject, setActivityByProject] = useState<Record<string, ProjectActivity[]>>({});
+  const [decisionsByProject, setDecisionsByProject] = useState<Record<string, ProjectDecision[]>>({});
+  const [decisionTitle, setDecisionTitle] = useState("");
+  const [decisionText, setDecisionText] = useState("");
+  const [decisionRationale, setDecisionRationale] = useState("");
+  const [decisionSourceRef, setDecisionSourceRef] = useState("");
+  const [savingDecisionProjectId, setSavingDecisionProjectId] = useState<string | null>(null);
   const [tasksLoadingProjectId, setTasksLoadingProjectId] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
@@ -400,16 +417,22 @@ export default function App() {
 
     setActiveTaskProjectId(projectId);
     setTaskError("");
-    if (tasksByProject[projectId] && activityByProject[projectId]) return;
+    if (
+      tasksByProject[projectId]
+      && activityByProject[projectId]
+      && decisionsByProject[projectId]
+    ) return;
 
     setTasksLoadingProjectId(projectId);
     try {
-      const [tasks, activity] = await Promise.all([
+      const [tasks, activity, decisions] = await Promise.all([
         invoke<ProjectTask[]>("list_project_tasks", { projectId }),
-        invoke<ProjectActivity[]>("list_project_activity", { projectId })
+        invoke<ProjectActivity[]>("list_project_activity", { projectId }),
+        invoke<ProjectDecision[]>("list_project_decisions", { projectId })
       ]);
       setTasksByProject(current => ({ ...current, [projectId]: tasks }));
       setActivityByProject(current => ({ ...current, [projectId]: activity }));
+      setDecisionsByProject(current => ({ ...current, [projectId]: decisions }));
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
@@ -453,6 +476,46 @@ export default function App() {
       }
     } finally {
       setCreatingTaskProjectId(null);
+    }
+  };
+
+  const submitProjectDecision = async (
+    event: FormEvent<HTMLFormElement>,
+    projectId: string
+  ) => {
+    event.preventDefault();
+    const title = decisionTitle.trim();
+    const decision = decisionText.trim();
+    if (!title || !decision || savingDecisionProjectId) return;
+
+    setSavingDecisionProjectId(projectId);
+    setTaskError("");
+    try {
+      const record = await invoke<ProjectDecision>("create_project_decision", {
+        projectId,
+        title,
+        decision,
+        rationale: decisionRationale.trim(),
+        sourceRef: decisionSourceRef.trim()
+      });
+      setDecisionsByProject(current => ({
+        ...current,
+        [projectId]: [record, ...(current[projectId] ?? []).filter(item => item.id !== record.id)]
+      }));
+      setDecisionTitle("");
+      setDecisionText("");
+      setDecisionRationale("");
+      setDecisionSourceRef("");
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+        setTaskError("Your owner session expired. Sign in again to record a decision.");
+      } else {
+        setTaskError("JARVIS could not record this decision. Your draft is still available.");
+      }
+    } finally {
+      setSavingDecisionProjectId(null);
     }
   };
 
@@ -691,6 +754,69 @@ export default function App() {
                                         <small>{item.entity_type} · {new Date(item.occurred_at * 1000).toLocaleString()}</small>
                                       </div>
                                     </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="project-decisions">
+                              <div className="task-panel-heading">
+                                <div><span className="eyebrow">PROJECT MEMORY</span><b>Decision journal</b></div>
+                                <span>{(decisionsByProject[project.id] ?? []).length} recorded</span>
+                              </div>
+                              <form
+                                className="decision-create-form"
+                                onSubmit={event => void submitProjectDecision(event, project.id)}
+                              >
+                                <input
+                                  value={decisionTitle}
+                                  onChange={event => setDecisionTitle(event.target.value)}
+                                  maxLength={160}
+                                  placeholder="Decision title"
+                                  aria-label="Decision title"
+                                  required
+                                />
+                                <textarea
+                                  value={decisionText}
+                                  onChange={event => setDecisionText(event.target.value)}
+                                  maxLength={4000}
+                                  rows={3}
+                                  placeholder="What was decided?"
+                                  aria-label="Decision"
+                                  required
+                                />
+                                <textarea
+                                  value={decisionRationale}
+                                  onChange={event => setDecisionRationale(event.target.value)}
+                                  maxLength={4000}
+                                  rows={2}
+                                  placeholder="Why was this chosen? (optional)"
+                                  aria-label="Decision rationale"
+                                />
+                                <input
+                                  value={decisionSourceRef}
+                                  onChange={event => setDecisionSourceRef(event.target.value)}
+                                  maxLength={1000}
+                                  placeholder="Source or reference (optional)"
+                                  aria-label="Decision source reference"
+                                />
+                                <button type="submit" disabled={savingDecisionProjectId === project.id || !decisionTitle.trim() || !decisionText.trim()}>
+                                  {savingDecisionProjectId === project.id ? "Recording…" : "Record decision"}
+                                </button>
+                              </form>
+                              {(decisionsByProject[project.id] ?? []).length === 0 ? (
+                                <div className="task-empty">No decisions recorded for this project yet.</div>
+                              ) : (
+                                <div className="project-decision-list">
+                                  {(decisionsByProject[project.id] ?? []).map(item => (
+                                    <details className="project-decision-item" key={item.id}>
+                                      <summary>
+                                        <b>{item.title}</b>
+                                        <small>{new Date(item.decided_at * 1000).toLocaleDateString()}</small>
+                                      </summary>
+                                      <p>{item.decision}</p>
+                                      {item.rationale && <p><strong>Rationale:</strong> {item.rationale}</p>}
+                                      {item.source_ref && <small className="decision-source">Source: {item.source_ref}</small>}
+                                    </details>
                                   ))}
                                 </div>
                               )}
