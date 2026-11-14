@@ -22,6 +22,7 @@ from app.workspace_store import (
     create_project,
     create_project_task,
     get_project,
+    list_project_activity,
     list_project_tasks,
     list_projects,
     update_project_status,
@@ -252,6 +253,18 @@ def project_tasks_list(
     if get_project(project_id) is None:
         raise HTTPException(status_code=404, detail="project_not_found")
     return list_project_tasks(project_id)
+
+
+
+@app.get("/v1/projects/{project_id}/activity", tags=["projects"])
+def project_activity_list(
+    project_id: str,
+    _: None = Depends(require_owner_session),
+) -> list[dict[str, object]]:
+    """Return recent project and task audit events for the signed-in owner."""
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="project_not_found")
+    return list_project_activity(project_id)
 
 
 @app.post("/v1/projects/{project_id}/tasks", tags=["projects"], status_code=201)
