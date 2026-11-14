@@ -597,3 +597,40 @@ def test_project_task_status_returns_not_found_for_unknown_task(monkeypatch, tmp
         json={"status": "done"},
     )
     assert response.status_code == 404
+
+
+def test_project_activity_contains_audited_project_and_task_changes(monkeypatch, tmp_path):
+    headers = _create_owner_session(monkeypatch, tmp_path)
+    project = client.post(
+        "/v1/projects",
+        headers=headers,
+        json={"name": "Drive Secure", "description": ""},
+    )
+    project_id = project.json()["id"]
+    task = client.post(
+        f"/v1/projects/{project_id}/tasks",
+        headers=headers,
+        json={"title": "Provision test device"},
+    )
+    task_id = task.json()["id"]
+    changed = client.patch(
+        f"/v1/tasks/{task_id}/status",
+        headers=headers,
+        json={"status": "done"},
+    )
+    assert changed.status_code == 200
+
+    denied = client.get(f"/v1/projects/{project_id}/activity", headers=_process_headers())
+    assert denied.status_code == 401
+
+    activity = client.get(f"/v1/projects/{project_id}/activity", headers=headers)
+    assert activity.status_code == 200
+    event_types = [event["event_type"] for event in activity.json()]
+    assert event_types == [
+        "task.status_changed",
+        "task.created",
+        "project.created",
+    ]
+
+    missing = client.get("/v1/projects/unknown-project/activity", headers=headers)
+    assert missing.status_code == 404
