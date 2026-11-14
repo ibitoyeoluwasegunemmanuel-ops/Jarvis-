@@ -11,6 +11,7 @@ from typing import Any
 
 from app.approval_store import ApprovalError, consume_approval
 from app.policy import ActorContext, Decision, RiskTier, ToolRequest, evaluate
+from app.owner_auth import connect_database
 from app.workspace_store import create_project_task, get_project
 
 MAX_DISPATCH_ARGUMENTS = 16_000
@@ -38,6 +39,39 @@ def _create_project_task(arguments: dict[str, Any]) -> dict[str, Any]:
 _ACTIONS: dict[str, tuple[str, RiskTier, Callable[[dict[str, Any]], dict[str, Any]]]] = {
     "project.task.create": ("projects:write", RiskTier.REVERSIBLE, _create_project_task),
 }
+
+
+def _record_execution_event(
+    project_id: str, approval_id: str, action: str, actor_id: str, outcome: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Append a bounded execution lifecycle event to the immutable project log."""
+    import json
+    import time
+
+    safe_details = {
+        "approval_id": approval_id,
+        "action": action,
+        "outcome": outcome,
+        **(details or {}),
+    }
+    encoded = json.dumps(safe_details, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    if len(encoded.encode("utf-8")) > 4_000:
+        encoded = json.dumps({
+            "approval_id": approval_id, "action": action, "outcome": outcome,
+            "detail": "omitted_size_limit",
+        }, sort_keys=True, separators=(",", ":"))
+    connection = connect_database()
+    try:
+        connection.execute(
+            """INSERT INTO project_audit_events(
+                actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+            ) VALUES (?, ?, 'action_execution', ?, ?, ?)""",
+            (1, f"action_execution.{outcome}", approval_id, encoded, time.time()),
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def dispatch_approved_action(
@@ -91,7 +125,21 @@ def dispatch_approved_action(
     if consumed is None:
         raise DispatchError("approval_not_found")
 
-    result = handler(consumed["arguments"])
+    # Persist the start marker before invoking even a local tool.
+    _record_execution_event(
+        project_id, approval_id, action, actor.actor_id or "unknown", "started"
+    )
+    try:
+        result = handler(consumed["arguments"])
+    except Exception as error:
+        _record_execution_event(
+            project_id, approval_id, action, actor.actor_id or "unknown", "failed",
+            {"error_type": type(error).__name__},
+        )
+        raise
+    _record_execution_event(
+        project_id, approval_id, action, actor.actor_id or "unknown", "succeeded"
+    )
     return {
         "approval_id": approval_id,
         "action": action,
