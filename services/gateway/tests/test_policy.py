@@ -809,8 +809,8 @@ def test_project_milestone_validation_and_unknown_ids(monkeypatch, tmp_path):
 
     invalid_target = client.post(
         f"/v1/projects/{project_id}/milestones",
-        headers=headers,
-        json={"title": "A milestone", "target_at": float("nan")},
+        headers={**headers, "Content-Type": "application/json"},
+        content='{"title":"A milestone","target_at":NaN}',
     )
     assert invalid_target.status_code == 422
 
