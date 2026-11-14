@@ -177,6 +177,26 @@ jobs:
               throw "Packaged gateway did not return the project/task/decision audit trail"
             }
 
+            $milestoneBody = @{ title = "CI Smoke Milestone"; description = "Validate end-to-end milestone tracking."; target_at = 1900000000 } | ConvertTo-Json -Compress
+            $milestone = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/projects/$($project.id)/milestones" -Headers $ownerHeaders -ContentType "application/json" -Body $milestoneBody -TimeoutSec 5
+            if ($milestone.title -ne "CI Smoke Milestone" -or $milestone.status -ne "planned") {
+              throw "Packaged gateway did not create the project milestone"
+            }
+            $milestoneList = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/projects/$($project.id)/milestones" -Headers $ownerHeaders -TimeoutSec 5
+            if ($milestoneList.Count -lt 1 -or $milestoneList[0].id -ne $milestone.id) {
+              throw "Packaged gateway did not persist the project milestone"
+            }
+            $milestoneStatusBody = @{ status = "completed" } | ConvertTo-Json -Compress
+            $updatedMilestone = Invoke-RestMethod -Method Patch -Uri "http://127.0.0.1:8765/v1/milestones/$($milestone.id)/status" -Headers $ownerHeaders -ContentType "application/json" -Body $milestoneStatusBody -TimeoutSec 5
+            if ($updatedMilestone.status -ne "completed" -or $null -eq $updatedMilestone.completed_at) {
+              throw "Packaged gateway did not complete the project milestone"
+            }
+            $milestoneActivity = Invoke-RestMethod -Uri "http://127.0.0.1:8765/v1/projects/$($project.id)/activity" -Headers $ownerHeaders -TimeoutSec 5
+            $milestoneEventTypes = @($milestoneActivity | ForEach-Object { $_.event_type })
+            if ($milestoneEventTypes -notcontains "milestone.created" -or $milestoneEventTypes -notcontains "milestone.status_changed") {
+              throw "Packaged gateway did not include milestones in the project audit trail"
+            }
+
             $loginBody = @{ password = $setupPassword } | ConvertTo-Json -Compress
             $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/v1/auth/login" -Headers $headers -ContentType "application/json" -Body $loginBody -TimeoutSec 10
             $loginHeaders = @{ "X-Jarvis-Session" = $token; "X-Jarvis-Owner-Session" = $login.owner_session_token }
