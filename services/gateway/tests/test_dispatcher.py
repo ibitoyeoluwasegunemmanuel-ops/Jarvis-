@@ -1,6 +1,6 @@
 import pytest
 
-from app.approval_store import decide_approval, request_approval
+from app.approval_store import decide_approval, list_project_approvals, request_approval
 from app.dispatcher import DispatchError, dispatch_approved_action
 from app.owner_auth import setup_owner
 from app.policy import ActorContext
@@ -58,7 +58,7 @@ def test_dispatch_rejects_unallowlisted_action_without_consuming_approval(worksp
             actor, approval["id"], approval["nonce"], "browser.navigate", arguments
         )
 
-    assert decide_approval(approval["id"], True) is None or True
+    assert list_project_approvals(workspace)[0]["status"] == "approved"
 
 
 def test_dispatch_rechecks_scope_and_workspace_before_consumption(workspace):
