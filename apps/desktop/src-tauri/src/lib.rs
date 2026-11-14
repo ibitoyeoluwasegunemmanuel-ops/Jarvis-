@@ -76,6 +76,18 @@ struct ProjectActivityRecord {
     occurred_at: f64,
 }
 
+#[derive(Deserialize, Serialize)]
+struct ProjectDecisionRecord {
+    id: String,
+    project_id: String,
+    title: String,
+    decision: String,
+    rationale: String,
+    source_ref: String,
+    decided_at: f64,
+    created_at: f64,
+}
+
 #[derive(Serialize)]
 struct ProjectCreatePayload<'a> {
     name: &'a str,
@@ -96,6 +108,14 @@ struct ProjectTaskCreatePayload<'a> {
 #[derive(Serialize)]
 struct ProjectTaskStatusPayload<'a> {
     status: &'a str,
+}
+
+#[derive(Serialize)]
+struct ProjectDecisionCreatePayload<'a> {
+    title: &'a str,
+    decision: &'a str,
+    rationale: &'a str,
+    source_ref: &'a str,
 }
 
 fn valid_workspace_id(value: &str) -> bool {
@@ -462,6 +482,124 @@ async fn list_project_tasks(
     result
 }
 
+/// Lists the append-only decision journal for one validated owner project.
+#[tauri::command]
+async fn list_project_decisions(
+    project_id: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ProjectDecisionRecord>, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!(
+            "{}/{project_id}/decisions",
+            gateway_url(GATEWAY_PROJECTS_PATH)
+        );
+        let response = client
+            .get(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_decision_list_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<Vec<ProjectDecisionRecord>>()
+            .await
+            .map_err(|_| "project_decision_list_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Records a project decision through the native owner-authenticated bridge.
+#[tauri::command]
+async fn create_project_decision(
+    project_id: String,
+    title: String,
+    decision: String,
+    rationale: String,
+    source_ref: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectDecisionRecord, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    if title.trim().is_empty() || decision.trim().is_empty() {
+        return Err("project_decision_details_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!(
+            "{}/{project_id}/decisions",
+            gateway_url(GATEWAY_PROJECTS_PATH)
+        );
+        let response = client
+            .post(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectDecisionCreatePayload {
+                title: &title,
+                decision: &decision,
+                rationale: &rationale,
+                source_ref: &source_ref,
+            })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_decision_details_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_decision_create_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectDecisionRecord>()
+            .await
+            .map_err(|_| "project_decision_create_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Lists immutable project/task audit events through the owner-authenticated bridge.
 #[tauri::command]
 async fn list_project_activity(
@@ -711,7 +849,9 @@ pub fn run() {
             list_project_tasks,
             create_project_task,
             update_project_task_status,
-            list_project_activity
+            list_project_activity,
+            list_project_decisions,
+            create_project_decision
         ])
         .setup(|app| {
             let token = new_session_token();
