@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 from typing import Any
@@ -525,6 +526,195 @@ def create_project_decision(
         if row is None:
             raise RuntimeError("project_decision_create_failed")
         return dict(row)
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+MAX_MILESTONE_TITLE_LENGTH = 160
+MAX_MILESTONE_DESCRIPTION_LENGTH = 2000
+
+
+def _normalise_milestone_input(
+    title: str, description: str, target_at: float | None
+) -> tuple[str, str, float | None]:
+    if not isinstance(title, str) or not isinstance(description, str):
+        raise TypeError("project_milestone_fields_must_be_text")
+    clean_title = title.strip()
+    clean_description = description.strip()
+    if not clean_title:
+        raise ValueError("project_milestone_title_required")
+    if len(clean_title) > MAX_MILESTONE_TITLE_LENGTH:
+        raise ValueError("project_milestone_title_too_long")
+    if len(clean_description) > MAX_MILESTONE_DESCRIPTION_LENGTH:
+        raise ValueError("project_milestone_description_too_long")
+    if target_at is not None:
+        if isinstance(target_at, bool) or not isinstance(target_at, (int, float)):
+            raise ValueError("project_milestone_target_invalid")
+        if not math.isfinite(float(target_at)) or float(target_at) < 0:
+            raise ValueError("project_milestone_target_invalid")
+        target_at = float(target_at)
+    return clean_title, clean_description, target_at
+
+
+def list_project_milestones(project_id: str) -> list[dict[str, Any]]:
+    """List milestones belonging to the local owner's project."""
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return []
+    connection = connect_database()
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, project_id, title, description, target_at, status,
+                   completed_at, created_at, updated_at
+            FROM project_milestones
+            WHERE project_id = ? AND owner_id = 1
+            ORDER BY CASE WHEN target_at IS NULL THEN 1 ELSE 0 END,
+                     target_at ASC, created_at ASC
+            LIMIT 200
+            """,
+            (project_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def create_project_milestone(
+    project_id: str,
+    title: str,
+    description: str = "",
+    target_at: float | None = None,
+) -> dict[str, Any] | None:
+    """Create a project milestone and append an immutable audit event."""
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return None
+    clean_title, clean_description, target = _normalise_milestone_input(
+        title, description, target_at
+    )
+    milestone_id = uuid.uuid4().hex
+    now = time.time()
+    connection = connect_database()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        project = connection.execute(
+            "SELECT id FROM projects WHERE id = ? AND owner_id = 1",
+            (project_id,),
+        ).fetchone()
+        if project is None:
+            connection.rollback()
+            return None
+
+        connection.execute(
+            """
+            INSERT INTO project_milestones(
+                id, project_id, owner_id, title, description, target_at,
+                status, completed_at, created_at, updated_at
+            ) VALUES (?, ?, 1, ?, ?, ?, 'planned', NULL, ?, ?)
+            """,
+            (milestone_id, project_id, clean_title, clean_description, target, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO project_audit_events(
+                actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+            ) VALUES (1, 'milestone.created', 'milestone', ?, ?, ?)
+            """,
+            (
+                milestone_id,
+                json.dumps(
+                    {"project_id": project_id, "title": clean_title},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                now,
+            ),
+        )
+        row = connection.execute(
+            """
+            SELECT id, project_id, title, description, target_at, status,
+                   completed_at, created_at, updated_at
+            FROM project_milestones
+            WHERE id = ? AND owner_id = 1
+            """,
+            (milestone_id,),
+        ).fetchone()
+        connection.commit()
+        if row is None:
+            raise RuntimeError("project_milestone_create_failed")
+        return dict(row)
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def update_project_milestone_status(
+    milestone_id: str, status: str
+) -> dict[str, Any] | None:
+    """Update milestone status and audit the transition."""
+    allowed_statuses = {"planned", "in_progress", "completed", "cancelled"}
+    if status not in allowed_statuses:
+        raise ValueError("project_milestone_status_invalid")
+    if not isinstance(milestone_id, str) or not milestone_id or len(milestone_id) > 64:
+        return None
+
+    now = time.time()
+    connection = connect_database()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT status FROM project_milestones WHERE id = ? AND owner_id = 1",
+            (milestone_id,),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            return None
+
+        previous_status = str(row["status"])
+        if previous_status != status:
+            completed_at = now if status == "completed" else None
+            connection.execute(
+                """
+                UPDATE project_milestones
+                SET status = ?, completed_at = ?, updated_at = ?
+                WHERE id = ? AND owner_id = 1
+                """,
+                (status, completed_at, now, milestone_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO project_audit_events(
+                    actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+                ) VALUES (1, 'milestone.status_changed', 'milestone', ?, ?, ?)
+                """,
+                (
+                    milestone_id,
+                    json.dumps(
+                        {"from": previous_status, "to": status},
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    now,
+                ),
+            )
+
+        updated = connection.execute(
+            """
+            SELECT id, project_id, title, description, target_at, status,
+                   completed_at, created_at, updated_at
+            FROM project_milestones
+            WHERE id = ? AND owner_id = 1
+            """,
+            (milestone_id,),
+        ).fetchone()
+        connection.commit()
+        return dict(updated) if updated is not None else None
     except Exception:
         if connection.in_transaction:
             connection.rollback()
