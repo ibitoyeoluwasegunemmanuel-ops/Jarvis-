@@ -45,6 +45,16 @@ type Project = {
   updated_at: number;
 };
 
+type ProjectTask = {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  status: "open" | "in_progress" | "done";
+  created_at: number;
+  updated_at: number;
+};
+
 const gateway = import.meta.env.VITE_GATEWAY_URL ?? "http://127.0.0.1:8765";
 
 function readableAuthError(error: unknown): string {
@@ -180,6 +190,14 @@ export default function App() {
   const [projectDescription, setProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [updatingProjectId, setUpdatingProjectId] = useState<string | null>(null);
+  const [activeTaskProjectId, setActiveTaskProjectId] = useState<string | null>(null);
+  const [tasksByProject, setTasksByProject] = useState<Record<string, ProjectTask[]>>({});
+  const [tasksLoadingProjectId, setTasksLoadingProjectId] = useState<string | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [creatingTaskProjectId, setCreatingTaskProjectId] = useState<string | null>(null);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -363,6 +381,96 @@ export default function App() {
     }
   };
 
+  const toggleProjectTasks = async (projectId: string) => {
+    if (activeTaskProjectId === projectId) {
+      setActiveTaskProjectId(null);
+      setTaskError("");
+      return;
+    }
+
+    setActiveTaskProjectId(projectId);
+    setTaskError("");
+    if (tasksByProject[projectId]) return;
+
+    setTasksLoadingProjectId(projectId);
+    try {
+      const tasks = await invoke<ProjectTask[]>("list_project_tasks", { projectId });
+      setTasksByProject(current => ({ ...current, [projectId]: tasks }));
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+      }
+      setTaskError("JARVIS could not load tasks for this project.");
+    } finally {
+      setTasksLoadingProjectId(null);
+    }
+  };
+
+  const submitProjectTask = async (
+    event: FormEvent<HTMLFormElement>,
+    projectId: string
+  ) => {
+    event.preventDefault();
+    const title = taskTitle.trim();
+    if (!title || creatingTaskProjectId) return;
+
+    setCreatingTaskProjectId(projectId);
+    setTaskError("");
+    try {
+      const task = await invoke<ProjectTask>("create_project_task", {
+        projectId,
+        title,
+        description: taskDescription.trim()
+      });
+      setTasksByProject(current => ({
+        ...current,
+        [projectId]: [task, ...(current[projectId] ?? []).filter(item => item.id !== task.id)]
+      }));
+      setTaskTitle("");
+      setTaskDescription("");
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+        setTaskError("Your owner session expired. Sign in again to add tasks.");
+      } else {
+        setTaskError("JARVIS could not save this task. Your draft is still available.");
+      }
+    } finally {
+      setCreatingTaskProjectId(null);
+    }
+  };
+
+  const changeProjectTaskStatus = async (
+    projectId: string,
+    taskId: string,
+    status: ProjectTask["status"]
+  ) => {
+    setUpdatingTaskId(taskId);
+    setTaskError("");
+    try {
+      const updated = await invoke<ProjectTask>("update_project_task_status", {
+        taskId,
+        status
+      });
+      setTasksByProject(current => ({
+        ...current,
+        [projectId]: (current[projectId] ?? []).map(item => item.id === taskId ? updated : item)
+      }));
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+        setTaskError("Your owner session expired. Sign in again to update tasks.");
+      } else {
+        setTaskError("JARVIS could not update this task.");
+      }
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  };
+
   const nav = [
     { label: "Overview", icon: LayoutDashboard },
     { label: "Projects", icon: FolderKanban },
@@ -463,27 +571,97 @@ export default function App() {
                 ) : (
                   <div className="project-list">
                     {projects.map(project => (
-                      <div className="project-row" key={project.id}>
-                        <div className="project-symbol"><FolderKanban size={17}/></div>
-                        <div className="project-main">
-                          <b>{project.name}</b>
-                          <span>{project.description || "No description added yet."}</span>
-                          <small>Updated {new Date(project.updated_at * 1000).toLocaleDateString()}</small>
+                      <div className="project-entry" key={project.id}>
+                        <div className="project-row">
+                          <div className="project-symbol"><FolderKanban size={17}/></div>
+                          <div className="project-main">
+                            <b>{project.name}</b>
+                            <span>{project.description || "No description added yet."}</span>
+                            <small>Updated {new Date(project.updated_at * 1000).toLocaleDateString()}</small>
+                            <button
+                              type="button"
+                              className="task-toggle"
+                              onClick={() => void toggleProjectTasks(project.id)}
+                            >
+                              {activeTaskProjectId === project.id ? "Hide tasks" : "Manage tasks"}
+                              <span>{(tasksByProject[project.id] ?? []).length}</span>
+                            </button>
+                          </div>
+                          <select
+                            className={`project-status-select ${project.status}`}
+                            aria-label={`Status for ${project.name}`}
+                            value={project.status}
+                            disabled={updatingProjectId === project.id}
+                            onChange={event => changeProjectStatus(
+                              project.id,
+                              event.target.value as Project["status"]
+                            )}
+                          >
+                            <option value="active">Active</option>
+                            <option value="paused">Paused</option>
+                            <option value="completed">Completed</option>
+                          </select>
                         </div>
-                        <select
-                          className={`project-status-select ${project.status}`}
-                          aria-label={`Status for ${project.name}`}
-                          value={project.status}
-                          disabled={updatingProjectId === project.id}
-                          onChange={event => changeProjectStatus(
-                            project.id,
-                            event.target.value as Project["status"]
-                          )}
-                        >
-                          <option value="active">Active</option>
-                          <option value="paused">Paused</option>
-                          <option value="completed">Completed</option>
-                        </select>
+                        {activeTaskProjectId === project.id && (
+                          <div className="project-tasks-panel">
+                            <div className="task-panel-heading">
+                              <div><span className="eyebrow">PROJECT WORK</span><b>Tasks</b></div>
+                              <span>{(tasksByProject[project.id] ?? []).length} saved</span>
+                            </div>
+                            <form className="task-create-form" onSubmit={event => void submitProjectTask(event, project.id)}>
+                              <input
+                                value={taskTitle}
+                                onChange={event => setTaskTitle(event.target.value)}
+                                maxLength={160}
+                                placeholder="Add a task…"
+                                aria-label={`New task for ${project.name}`}
+                                required
+                              />
+                              <input
+                                value={taskDescription}
+                                onChange={event => setTaskDescription(event.target.value)}
+                                maxLength={2000}
+                                placeholder="Optional details"
+                                aria-label="Task details"
+                              />
+                              <button type="submit" disabled={creatingTaskProjectId === project.id || !taskTitle.trim()}>
+                                {creatingTaskProjectId === project.id ? "Adding…" : "Add task"}
+                              </button>
+                            </form>
+                            {taskError && <div className="project-error">{taskError}</div>}
+                            {tasksLoadingProjectId === project.id ? (
+                              <div className="task-empty">Loading tasks…</div>
+                            ) : (tasksByProject[project.id] ?? []).length === 0 ? (
+                              <div className="task-empty">No tasks yet. Add the first action for this project.</div>
+                            ) : (
+                              <div className="task-list">
+                                {(tasksByProject[project.id] ?? []).map(task => (
+                                  <div className="task-row" key={task.id}>
+                                    <div className="task-copy">
+                                      <b>{task.title}</b>
+                                      {task.description && <span>{task.description}</span>}
+                                    </div>
+                                    <select
+                                      className={`task-status-select ${task.status}`}
+                                      aria-label={`Status for task ${task.title}`}
+                                      value={task.status}
+                                      disabled={updatingTaskId === task.id}
+                                      onChange={event => void changeProjectTaskStatus(
+                                        project.id,
+                                        task.id,
+                                        event.target.value as ProjectTask["status"]
+                                      )}
+                                    >
+                                      <option value="open">Open</option>
+                                      <option value="in_progress">In progress</option>
+                                      <option value="done">Done</option>
+                                    </select>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
