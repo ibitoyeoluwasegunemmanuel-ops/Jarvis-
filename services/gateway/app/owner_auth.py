@@ -113,6 +113,29 @@ def connect_database() -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS project_tasks_owner_project_updated
             ON project_tasks(owner_id, project_id, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS project_decisions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
+            title TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            rationale TEXT NOT NULL DEFAULT '',
+            source_ref TEXT NOT NULL DEFAULT '',
+            decided_at REAL NOT NULL,
+            created_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS project_decisions_owner_project_created
+            ON project_decisions(owner_id, project_id, created_at DESC);
+        CREATE TRIGGER IF NOT EXISTS project_decisions_no_update
+        BEFORE UPDATE ON project_decisions
+        BEGIN
+            SELECT RAISE(ABORT, 'project_decisions_are_append_only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS project_decisions_no_delete
+        BEFORE DELETE ON project_decisions
+        BEGIN
+            SELECT RAISE(ABORT, 'project_decisions_are_append_only');
+        END;
         CREATE TABLE IF NOT EXISTS project_audit_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             actor_id INTEGER NOT NULL DEFAULT 1 REFERENCES owner_account(id),
