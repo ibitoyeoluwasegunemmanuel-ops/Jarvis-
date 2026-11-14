@@ -75,6 +75,18 @@ type ProjectDecision = {
   created_at: number;
 };
 
+type ProjectMilestone = {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  target_at: number | null;
+  status: "planned" | "in_progress" | "completed" | "cancelled";
+  completed_at: number | null;
+  created_at: number;
+  updated_at: number;
+};
+
 const gateway = import.meta.env.VITE_GATEWAY_URL ?? "http://127.0.0.1:8765";
 
 function readableAuthError(error: unknown): string {
@@ -214,6 +226,12 @@ export default function App() {
   const [tasksByProject, setTasksByProject] = useState<Record<string, ProjectTask[]>>({});
   const [activityByProject, setActivityByProject] = useState<Record<string, ProjectActivity[]>>({});
   const [decisionsByProject, setDecisionsByProject] = useState<Record<string, ProjectDecision[]>>({});
+  const [milestonesByProject, setMilestonesByProject] = useState<Record<string, ProjectMilestone[]>>({});
+  const [milestoneTitle, setMilestoneTitle] = useState("");
+  const [milestoneDescription, setMilestoneDescription] = useState("");
+  const [milestoneTargetDate, setMilestoneTargetDate] = useState("");
+  const [savingMilestoneProjectId, setSavingMilestoneProjectId] = useState<string | null>(null);
+  const [updatingMilestoneId, setUpdatingMilestoneId] = useState<string | null>(null);
   const [decisionTitle, setDecisionTitle] = useState("");
   const [decisionText, setDecisionText] = useState("");
   const [decisionRationale, setDecisionRationale] = useState("");
@@ -421,18 +439,21 @@ export default function App() {
       tasksByProject[projectId]
       && activityByProject[projectId]
       && decisionsByProject[projectId]
+      && milestonesByProject[projectId]
     ) return;
 
     setTasksLoadingProjectId(projectId);
     try {
-      const [tasks, activity, decisions] = await Promise.all([
+      const [tasks, activity, decisions, milestones] = await Promise.all([
         invoke<ProjectTask[]>("list_project_tasks", { projectId }),
         invoke<ProjectActivity[]>("list_project_activity", { projectId }),
-        invoke<ProjectDecision[]>("list_project_decisions", { projectId })
+        invoke<ProjectDecision[]>("list_project_decisions", { projectId }),
+        invoke<ProjectMilestone[]>("list_project_milestones", { projectId })
       ]);
       setTasksByProject(current => ({ ...current, [projectId]: tasks }));
       setActivityByProject(current => ({ ...current, [projectId]: activity }));
       setDecisionsByProject(current => ({ ...current, [projectId]: decisions }));
+      setMilestonesByProject(current => ({ ...current, [projectId]: milestones }));
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
@@ -486,6 +507,86 @@ export default function App() {
       }
     } finally {
       setCreatingTaskProjectId(null);
+    }
+  };
+
+  const submitProjectMilestone = async (
+    event: FormEvent<HTMLFormElement>,
+    projectId: string
+  ) => {
+    event.preventDefault();
+    const title = milestoneTitle.trim();
+    if (!title || savingMilestoneProjectId) return;
+
+    setSavingMilestoneProjectId(projectId);
+    setTaskError("");
+    const targetAt = milestoneTargetDate
+      ? new Date(`${milestoneTargetDate}T00:00:00`).getTime() / 1000
+      : null;
+    try {
+      const milestone = await invoke<ProjectMilestone>("create_project_milestone", {
+        projectId,
+        title,
+        description: milestoneDescription.trim(),
+        targetAt
+      });
+      setMilestonesByProject(current => ({
+        ...current,
+        [projectId]: [...(current[projectId] ?? []), milestone]
+          .sort((a, b) => (a.target_at ?? Number.MAX_SAFE_INTEGER) - (b.target_at ?? Number.MAX_SAFE_INTEGER))
+      }));
+      try {
+        await refreshProjectActivity(projectId);
+      } catch {
+        setTaskError("Milestone saved, but the activity timeline could not refresh.");
+      }
+      setMilestoneTitle("");
+      setMilestoneDescription("");
+      setMilestoneTargetDate("");
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+        setTaskError("Your owner session expired. Sign in again to add milestones.");
+      } else {
+        setTaskError("JARVIS could not save this milestone. Your draft is still available.");
+      }
+    } finally {
+      setSavingMilestoneProjectId(null);
+    }
+  };
+
+  const changeProjectMilestoneStatus = async (
+    projectId: string,
+    milestoneId: string,
+    status: ProjectMilestone["status"]
+  ) => {
+    setUpdatingMilestoneId(milestoneId);
+    setTaskError("");
+    try {
+      const updated = await invoke<ProjectMilestone>("update_project_milestone_status", {
+        milestoneId,
+        status
+      });
+      setMilestonesByProject(current => ({
+        ...current,
+        [projectId]: (current[projectId] ?? []).map(item => item.id === milestoneId ? updated : item)
+      }));
+      try {
+        await refreshProjectActivity(projectId);
+      } catch {
+        setTaskError("Milestone updated, but the activity timeline could not refresh.");
+      }
+    } catch (error) {
+      const detail = String(error);
+      if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
+        setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+        setTaskError("Your owner session expired. Sign in again to update milestones.");
+      } else {
+        setTaskError("JARVIS could not update this milestone.");
+      }
+    } finally {
+      setUpdatingMilestoneId(null);
     }
   };
 
@@ -773,6 +874,78 @@ export default function App() {
                                         <b>{item.event_type.replace(/[._]/g, " ")}</b>
                                         <small>{item.entity_type} · {new Date(item.occurred_at * 1000).toLocaleString()}</small>
                                       </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="project-milestones">
+                              <div className="task-panel-heading">
+                                <div><span className="eyebrow">DELIVERY PLAN</span><b>Milestones</b></div>
+                                <span>{(milestonesByProject[project.id] ?? []).length} tracked</span>
+                              </div>
+                              <form
+                                className="milestone-create-form"
+                                onSubmit={event => void submitProjectMilestone(event, project.id)}
+                              >
+                                <input
+                                  value={milestoneTitle}
+                                  onChange={event => setMilestoneTitle(event.target.value)}
+                                  maxLength={160}
+                                  placeholder="Milestone title"
+                                  aria-label="Milestone title"
+                                  required
+                                />
+                                <input
+                                  value={milestoneDescription}
+                                  onChange={event => setMilestoneDescription(event.target.value)}
+                                  maxLength={2000}
+                                  placeholder="Short description (optional)"
+                                  aria-label="Milestone description"
+                                />
+                                <label htmlFor={`milestone-date-${project.id}`}>Target date</label>
+                                <input
+                                  id={`milestone-date-${project.id}`}
+                                  type="date"
+                                  value={milestoneTargetDate}
+                                  onChange={event => setMilestoneTargetDate(event.target.value)}
+                                />
+                                <button type="submit" disabled={savingMilestoneProjectId === project.id || !milestoneTitle.trim()}>
+                                  {savingMilestoneProjectId === project.id ? "Saving…" : "Add milestone"}
+                                </button>
+                              </form>
+                              {(milestonesByProject[project.id] ?? []).length === 0 ? (
+                                <div className="task-empty">No milestones defined for this project yet.</div>
+                              ) : (
+                                <div className="milestone-list">
+                                  {(milestonesByProject[project.id] ?? []).map(item => (
+                                    <div className="milestone-row" key={item.id}>
+                                      <div className="milestone-copy">
+                                        <b>{item.title}</b>
+                                        {item.description && <span>{item.description}</span>}
+                                        {item.target_at !== null && (
+                                          <small>Target {new Date(item.target_at * 1000).toLocaleDateString()}</small>
+                                        )}
+                                        {item.completed_at !== null && (
+                                          <small>Completed {new Date(item.completed_at * 1000).toLocaleDateString()}</small>
+                                        )}
+                                      </div>
+                                      <select
+                                        className={`milestone-status-select ${item.status}`}
+                                        aria-label={`Status for milestone ${item.title}`}
+                                        value={item.status}
+                                        disabled={updatingMilestoneId === item.id}
+                                        onChange={event => void changeProjectMilestoneStatus(
+                                          project.id,
+                                          item.id,
+                                          event.target.value as ProjectMilestone["status"]
+                                        )}
+                                      >
+                                        <option value="planned">Planned</option>
+                                        <option value="in_progress">In progress</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="cancelled">Cancelled</option>
+                                      </select>
                                     </div>
                                   ))}
                                 </div>
