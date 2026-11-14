@@ -180,3 +180,175 @@ def update_project_status(project_id: str, status: str) -> dict[str, Any] | None
     finally:
         connection.close()
 
+
+MAX_TASK_TITLE_LENGTH = 160
+MAX_TASK_DESCRIPTION_LENGTH = 2000
+
+
+def _normalise_task_input(title: str, description: str) -> tuple[str, str]:
+    if not isinstance(title, str):
+        raise TypeError("task_title_must_be_text")
+    if not isinstance(description, str):
+        raise TypeError("task_description_must_be_text")
+
+    clean_title = title.strip()
+    clean_description = description.strip()
+    if not clean_title:
+        raise ValueError("task_title_required")
+    if len(clean_title) > MAX_TASK_TITLE_LENGTH:
+        raise ValueError("task_title_too_long")
+    if len(clean_description) > MAX_TASK_DESCRIPTION_LENGTH:
+        raise ValueError("task_description_too_long")
+    return clean_title, clean_description
+
+
+def list_project_tasks(project_id: str) -> list[dict[str, Any]]:
+    """List tasks only when they belong to the local owner and requested project."""
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return []
+
+    connection = connect_database()
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, project_id, title, description, status, created_at, updated_at
+            FROM project_tasks
+            WHERE project_id = ? AND owner_id = 1
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT 200
+            """,
+            (project_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def create_project_task(
+    project_id: str, title: str, description: str = ""
+) -> dict[str, Any] | None:
+    """Create a task under an owner project and append an immutable audit event."""
+    if not isinstance(project_id, str) or not project_id or len(project_id) > 64:
+        return None
+    clean_title, clean_description = _normalise_task_input(title, description)
+    task_id = uuid.uuid4().hex
+    now = time.time()
+
+    connection = connect_database()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        project = connection.execute(
+            "SELECT id FROM projects WHERE id = ? AND owner_id = 1",
+            (project_id,),
+        ).fetchone()
+        if project is None:
+            connection.rollback()
+            return None
+
+        connection.execute(
+            """
+            INSERT INTO project_tasks(
+                id, project_id, owner_id, title, description, status, created_at, updated_at
+            ) VALUES (?, ?, 1, ?, ?, 'open', ?, ?)
+            """,
+            (task_id, project_id, clean_title, clean_description, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO project_audit_events(
+                actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+            ) VALUES (1, 'task.created', 'task', ?, ?, ?)
+            """,
+            (
+                task_id,
+                json.dumps(
+                    {"project_id": project_id, "title": clean_title},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                now,
+            ),
+        )
+        row = connection.execute(
+            """
+            SELECT id, project_id, title, description, status, created_at, updated_at
+            FROM project_tasks
+            WHERE id = ? AND owner_id = 1
+            """,
+            (task_id,),
+        ).fetchone()
+        connection.commit()
+        if row is None:
+            raise RuntimeError("project_task_create_failed")
+        return dict(row)
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def update_project_task_status(task_id: str, status: str) -> dict[str, Any] | None:
+    """Update a task status and append an audit event only when it changes."""
+    allowed_statuses = {"open", "in_progress", "done"}
+    if status not in allowed_statuses:
+        raise ValueError("project_task_status_invalid")
+    if not isinstance(task_id, str) or not task_id or len(task_id) > 64:
+        return None
+
+    now = time.time()
+    connection = connect_database()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT status FROM project_tasks WHERE id = ? AND owner_id = 1",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            return None
+
+        previous_status = str(row["status"])
+        if previous_status != status:
+            connection.execute(
+                """
+                UPDATE project_tasks
+                SET status = ?, updated_at = ?
+                WHERE id = ? AND owner_id = 1
+                """,
+                (status, now, task_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO project_audit_events(
+                    actor_id, event_type, entity_type, entity_id, details_json, occurred_at
+                ) VALUES (1, 'task.status_changed', 'task', ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    json.dumps(
+                        {"from": previous_status, "to": status},
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    now,
+                ),
+            )
+
+        updated = connection.execute(
+            """
+            SELECT id, project_id, title, description, status, created_at, updated_at
+            FROM project_tasks
+            WHERE id = ? AND owner_id = 1
+            """,
+            (task_id,),
+        ).fetchone()
+        connection.commit()
+        return dict(updated) if updated is not None else None
+    except Exception:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
