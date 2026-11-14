@@ -88,6 +88,19 @@ struct ProjectDecisionRecord {
     created_at: f64,
 }
 
+#[derive(Deserialize, Serialize)]
+struct ProjectMilestoneRecord {
+    id: String,
+    project_id: String,
+    title: String,
+    description: String,
+    target_at: Option<f64>,
+    status: String,
+    completed_at: Option<f64>,
+    created_at: f64,
+    updated_at: f64,
+}
+
 #[derive(Serialize)]
 struct ProjectCreatePayload<'a> {
     name: &'a str,
@@ -116,6 +129,18 @@ struct ProjectDecisionCreatePayload<'a> {
     decision: &'a str,
     rationale: &'a str,
     source_ref: &'a str,
+}
+
+#[derive(Serialize)]
+struct ProjectMilestoneCreatePayload<'a> {
+    title: &'a str,
+    description: &'a str,
+    target_at: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct ProjectMilestoneStatusPayload<'a> {
+    status: &'a str,
 }
 
 fn valid_workspace_id(value: &str) -> bool {
@@ -475,6 +500,180 @@ async fn list_project_tasks(
             .json::<Vec<ProjectTaskRecord>>()
             .await
             .map_err(|_| "project_task_list_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Lists milestones for one validated owner project.
+#[tauri::command]
+async fn list_project_milestones(
+    project_id: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ProjectMilestoneRecord>, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!("{}/{project_id}/milestones", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client
+            .get(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_milestone_list_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<Vec<ProjectMilestoneRecord>>()
+            .await
+            .map_err(|_| "project_milestone_list_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Creates a milestone with an optional target timestamp.
+#[tauri::command]
+async fn create_project_milestone(
+    project_id: String,
+    title: String,
+    description: String,
+    target_at: Option<f64>,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectMilestoneRecord, String> {
+    if !valid_workspace_id(&project_id) {
+        return Err("project_id_invalid".to_string());
+    }
+    if title.trim().is_empty() || title.trim().len() > 160 || description.len() > 2000 {
+        return Err("project_milestone_details_invalid".to_string());
+    }
+    if let Some(target) = target_at {
+        if !target.is_finite() || target < 0.0 {
+            return Err("project_milestone_target_invalid".to_string());
+        }
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!("{}/{project_id}/milestones", gateway_url(GATEWAY_PROJECTS_PATH));
+        let response = client
+            .post(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectMilestoneCreatePayload {
+                title: &title,
+                description: &description,
+                target_at,
+            })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_not_found".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_milestone_details_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_milestone_create_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectMilestoneRecord>()
+            .await
+            .map_err(|_| "project_milestone_create_response_invalid".to_string())
+    }
+    .await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Updates a milestone's status via the owner-authenticated bridge.
+#[tauri::command]
+async fn update_project_milestone_status(
+    milestone_id: String,
+    status: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ProjectMilestoneRecord, String> {
+    if !valid_workspace_id(&milestone_id) {
+        return Err("project_milestone_id_invalid".to_string());
+    }
+    if !["planned", "in_progress", "completed", "cancelled"].contains(&status.as_str()) {
+        return Err("project_milestone_status_invalid".to_string());
+    }
+    let client = gateway_client()?;
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let url = format!(
+            "{}/{milestone_id}/status",
+            gateway_url("/v1/milestones")
+        );
+        let response = client
+            .patch(url)
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ProjectMilestoneStatusPayload { status: &status })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("project_milestone_not_found".to_string());
+        }
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            return Err("project_milestone_status_invalid".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("project_milestone_status_update_failed_{}", response.status().as_u16()));
+        }
+
+        response
+            .json::<ProjectMilestoneRecord>()
+            .await
+            .map_err(|_| "project_milestone_status_response_invalid".to_string())
     }
     .await;
 
@@ -851,7 +1050,10 @@ pub fn run() {
             update_project_task_status,
             list_project_activity,
             list_project_decisions,
-            create_project_decision
+            create_project_decision,
+            list_project_milestones,
+            create_project_milestone,
+            update_project_milestone_status
         ])
         .setup(|app| {
             let token = new_session_token();
