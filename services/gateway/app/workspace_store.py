@@ -363,8 +363,10 @@ def list_project_activity(project_id: str) -> list[dict[str, Any]]:
     connection = connect_database()
     try:
         from app.project_brain import _ensure_tables
+        from app.approval_store import _ensure_tables as _ensure_approval_tables
 
         _ensure_tables(connection)
+        _ensure_approval_tables(connection)
         rows = connection.execute(
             """
             SELECT id, event_type, entity_type, entity_id, details_json, occurred_at
@@ -402,11 +404,17 @@ def list_project_activity(project_id: str) -> list[dict[str, Any]]:
                     SELECT id FROM project_memory
                     WHERE project_id = ? AND owner_id = 1
                 )
+            ) OR (
+                entity_type = 'action_execution'
+                AND entity_id IN (
+                    SELECT id FROM action_approvals
+                    WHERE project_id = ? AND owner_id = 1
+                )
             )
             ORDER BY occurred_at DESC, id DESC
             LIMIT 100
             """,
-            (project_id, project_id, project_id, project_id, project_id, project_id),
+            (project_id, project_id, project_id, project_id, project_id, project_id, project_id),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
