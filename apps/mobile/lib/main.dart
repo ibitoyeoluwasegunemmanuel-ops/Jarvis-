@@ -95,7 +95,8 @@ class _JarvisHomeState extends State<JarvisHome> {
 
   Future<void> ensureDevice() async {
     if (workspaceId.isEmpty) return;
-    final existing = await storage.read(key: 'jarvis_registered_device_id');
+    final deviceStorageKey = 'jarvis_registered_device_id_$workspaceId';
+    final existing = await storage.read(key: deviceStorageKey);
     if (existing != null && existing.isNotEmpty) return;
     final platform = switch (defaultTargetPlatform) {
       TargetPlatform.android => 'android',
@@ -107,7 +108,7 @@ class _JarvisHomeState extends State<JarvisHome> {
       deviceName: platform == 'ios' ? 'iPhone' : platform == 'android' ? 'Android phone' : 'Mobile device',
       platform: platform,
     );
-    await storage.write(key: 'jarvis_registered_device_id', value: device['id'].toString());
+    await storage.write(key: deviceStorageKey, value: device['id'].toString());
     await refreshData();
   }
 
@@ -240,8 +241,9 @@ class _JarvisHomeState extends State<JarvisHome> {
               tooltip: 'Revoke device',
               onPressed: () => run(() async {
                 await client.revokeDevice(d['id'].toString());
-                final local = await storage.read(key: 'jarvis_registered_device_id');
-                if (local == d['id'].toString()) await storage.delete(key: 'jarvis_registered_device_id');
+                final deviceStorageKey = 'jarvis_registered_device_id_$workspaceId';
+                final local = await storage.read(key: deviceStorageKey);
+                if (local == d['id'].toString()) await storage.delete(key: deviceStorageKey);
                 await refreshData();
               }),
             ),
