@@ -1,3 +1,11 @@
+## Desktop-to-cloud project sync API (Nov 15, 2026)
+
+- Added `POST /v1/projects/sync` to upsert desktop projects into the shared workspace using a stable local-project identifier. Repeated sync calls update the same cloud row rather than creating duplicates.
+- Added a migration for the stable local ID and workspace-member write policy. Workspace viewers remain read-only; owner/admin/member roles can sync project records.
+- Added authenticated device heartbeat endpoint; the mobile app sends a heartbeat when it starts and when a device is already registered.
+- Added authentication-boundary tests for project sync and device heartbeat.
+- This API is ready for the next native Windows integration slice, but the Windows desktop app has not yet been connected to cloud sign-in or project sync.
+
 ## Mobile authentication and workspace integration (Nov 15, 2026)
 
 - Added Supabase Auth email/password sign-in and account creation to the Flutter app.
