@@ -1,3 +1,14 @@
+## Mobile authentication and workspace integration (Nov 15, 2026)
+
+- Added Supabase Auth email/password sign-in and account creation to the Flutter app.
+- Added secure access/refresh token persistence and refresh-token rotation; failed refresh clears the local session.
+- Added authenticated mobile API client for workspace discovery/creation, device registration/list/revocation, workspace overview, project listing and monitoring alerts.
+- The mobile dashboard now reads live API responses instead of placeholder project/alert counts. Empty states are explicit when no records exist.
+- Added per-workspace device registration tracking and a device list with revoke controls.
+- Updated mobile setup documentation. The app requires the deployed cloud API URL, Supabase project URL and public publishable/anon key. A service-role key must never be placed in the app.
+- These are source changes only. No Supabase project or cloud database has been configured; no production cloud API is deployed. Android/iOS CI and physical-device installation have not yet been verified.
+- Still outstanding: Windows desktop cloud identity/sync, push notifications, scheduled cloud monitoring workers, live updates, approvals, voice, offline sync, and production deployment hardening.
+
 ## Cross-device cloud API foundation (Nov 15, 2026)
 
 - Added a separate `services/cloud-api` FastAPI service; it does not reuse or expose the Windows loopback gateway.
