@@ -53,7 +53,10 @@ class _JarvisHomeState extends State<JarvisHome> {
   Future<void> init() async {
     try {
       await client.load();
-      if (client.isConfigured && client.isSignedIn) await loadWorkspaces();
+      if (client.isConfigured && client.isSignedIn) {
+        await loadWorkspaces();
+        if (workspace != null) await ensureDevice();
+      }
     } catch (e) { error = e.toString(); }
     if (mounted) setState(() => loading = false);
   }
@@ -103,7 +106,10 @@ class _JarvisHomeState extends State<JarvisHome> {
     final deviceStorageKey = 'jarvis_registered_device_id_$workspaceId';
     final existing = await storage.read(key: deviceStorageKey);
     if (existing != null && existing.isNotEmpty &&
-        devices.any((item) => item['id'].toString() == existing)) return;
+        devices.any((item) => item['id'].toString() == existing)) {
+      await client.heartbeatDevice(existing);
+      return;
+    }
     if (existing != null) await storage.delete(key: deviceStorageKey);
     final platform = switch (defaultTargetPlatform) {
       TargetPlatform.android => 'android',
