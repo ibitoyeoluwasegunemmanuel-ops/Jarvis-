@@ -87,6 +87,19 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "jarvis-cloud-api", "version": app.version}
 
 
+@app.get("/v1/workspaces")
+def list_workspaces(user_id: UserId) -> list[dict]:
+    with user_connection(user_id) as db:
+        return db.execute(
+            """SELECT w.id, w.name, w.timezone, w.locale, wm.role, w.created_at
+               FROM jarvis.workspaces w
+               JOIN jarvis.workspace_members wm ON wm.workspace_id = w.id
+               WHERE wm.user_id = %s
+               ORDER BY w.created_at""",
+            (user_id,),
+        ).fetchall()
+
+
 @app.post("/v1/workspaces", status_code=201)
 def create_workspace(payload: WorkspaceCreate, user_id: UserId) -> dict:
     workspace_id = uuid.uuid4()
