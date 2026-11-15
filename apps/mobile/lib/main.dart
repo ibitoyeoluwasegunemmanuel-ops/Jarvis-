@@ -69,6 +69,11 @@ class _JarvisHomeState extends State<JarvisHome> {
     await refreshData();
   }
 
+  Future<void> switchWorkspace(String id) async {
+    await loadWorkspaces(selectId: id);
+    await ensureDevice();
+  }
+
   Future<void> refreshData() async {
     if (workspaceId.isEmpty) return;
     final id = workspaceId;
@@ -204,7 +209,7 @@ class _JarvisHomeState extends State<JarvisHome> {
           items: workspaces.map((w) => DropdownMenuItem<String>(
             value: w['id'].toString(), child: Text(w['name']?.toString() ?? 'Workspace'),
           )).toList(),
-          onChanged: (id) { if (id != null) run(() => loadWorkspaces(selectId: id)); },
+          onChanged: (id) { if (id != null) run(() => switchWorkspace(id)); },
         ),
         const SizedBox(height: 20),
         const SectionHeader('PROJECTS'),
