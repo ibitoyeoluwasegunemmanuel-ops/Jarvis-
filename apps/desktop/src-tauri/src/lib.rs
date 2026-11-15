@@ -445,8 +445,10 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
         for entry in vault.values_mut() { entry.value.zeroize(); }
         vault.clear();
     }
-    if let Ok(mut cloud_session) = runtime.cloud_session.lock() {
-        drop(cloud_session.take());
+    let cloud_session = runtime.cloud_session.lock().ok().and_then(|mut guard| guard.take());
+    if let Some(cloud_session) = cloud_session {
+        revoke_supabase_session(&cloud_session).await;
+        drop(cloud_session);
     }
     let owner_session = runtime
         .owner_session
@@ -1057,13 +1059,30 @@ async fn sync_cloud_projects(
     Ok(status)
 }
 
+async fn revoke_supabase_session(session: &CloudSession) {
+    if let Ok(client) = cloud_http_client() {
+        let _ = client
+            .post(format!("{}/auth/v1/logout", session.supabase_url))
+            .header("apikey", &session.public_key)
+            .bearer_auth(&session.access_token)
+            .send()
+            .await;
+    }
+}
+
 #[tauri::command]
-fn disconnect_cloud(
+async fn disconnect_cloud(
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<(), String> {
-    let mut guard = runtime.cloud_session.lock()
-        .map_err(|_| "native_cloud_session_unavailable".to_string())?;
-    drop(guard.take());
+    let session = {
+        let mut guard = runtime.cloud_session.lock()
+            .map_err(|_| "native_cloud_session_unavailable".to_string())?;
+        guard.take()
+    };
+    if let Some(session) = session {
+        revoke_supabase_session(&session).await;
+        drop(session);
+    }
     Ok(())
 }
 
