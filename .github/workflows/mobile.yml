@@ -1,0 +1,60 @@
+name: JARVIS Mobile
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Flutter analyze, tests and Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android runner project
+        run: |
+          flutter create --project-name jarvis_mobile --org com.ceoglobal --platforms android --no-pub /tmp/jarvis_mobile_runner
+          cp -R /tmp/jarvis_mobile_runner/android apps/mobile/android
+
+      - name: Resolve dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/mobile
+        run: flutter analyze --no-pub
+
+      - name: Widget tests
+        working-directory: apps/mobile
+        run: flutter test --no-pub
+
+      - name: Build debug APK
+        working-directory: apps/mobile
+        run: flutter build apk --debug --no-pub
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-android-debug-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
