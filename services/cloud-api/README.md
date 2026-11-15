@@ -8,7 +8,7 @@ loopback-only and must never be exposed to a phone, LAN, tunnel, or public IP.
 - Verifies Supabase Auth asymmetric access tokens against a configured JWKS URL.
 - Requires issuer and `authenticated` audience validation.
 - Derives user identity from the verified token subject; no caller-supplied owner ID.
-- Uses a transaction-local PostgreSQL identity for RLS checks.
+- Uses a transaction-local PostgreSQL identity for RLS checks. Tenant policies use direct membership predicates; the migrations avoid SECURITY DEFINER helpers.
 - Supports owner workspace bootstrap, device registration/list/revocation, and authenticated device heartbeat timestamps.
 - Provides workspace-scoped project and alert reads, plus idempotent desktop project sync keyed by local project ID.
 - Records mobile device heartbeats and supports per-user device revocation.
@@ -39,8 +39,9 @@ database administrator connection (set its password through your secret manager)
 CREATE ROLE jarvis_api LOGIN NOBYPASSRLS;
 ```
 
-Then apply `migrations/0001_cloud_identity_devices.sql` followed by
-`migrations/0002_workspace_bootstrap.sql` with the migration-owner role. The
+Then apply `migrations/0001_cloud_identity_devices.sql`,
+`migrations/0002_workspace_bootstrap.sql`, and
+`migrations/0003_project_sync.sql` in order with the migration-owner role. The
 runtime role must not own the schema or protected tables. The migrations grant
 only the operations needed by this first API slice.
 
