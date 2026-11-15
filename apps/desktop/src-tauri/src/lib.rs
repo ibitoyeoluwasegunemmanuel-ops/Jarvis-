@@ -871,7 +871,7 @@ async fn connect_cloud_and_sync(
         let response = local_client
             .get(gateway_url(GATEWAY_PROJECTS_PATH))
             .header("X-Jarvis-Session", &runtime.session_token)
-            .header("X-Jarvis-Owner-Session", &owner_token)
+            .header("X-Jarvis-Owner-Session", owner_token.as_str())
             .send()
             .await
             .map_err(|_| "gateway_not_ready".to_string())?;
@@ -1031,7 +1031,7 @@ async fn sync_cloud_projects(
         let response = local_client
             .get(gateway_url(GATEWAY_PROJECTS_PATH))
             .header("X-Jarvis-Session", &runtime.session_token)
-            .header("X-Jarvis-Owner-Session", &owner_token)
+            .header("X-Jarvis-Owner-Session", owner_token.as_str())
             .send()
             .await
             .map_err(|_| "gateway_not_ready".to_string())?;
