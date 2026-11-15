@@ -80,3 +80,23 @@ The gateway process token is a transport gate, not owner identity. Owner account
 5. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
 6. Add voice, avatar, browser automation, and computer-use capabilities behind explicit permissions and tests.
 7. Build mobile/web clients and shared cloud brain; then validate installers on physical devices and establish code signing before broad distribution.
+
+## 2026-11-15 continuation — monitoring centre
+
+### Implemented in source
+
+- Added an owner-scoped monitoring registry for Vercel, Supabase, GitHub and manual connectors, with declared read-only scopes, connection metadata and an alert inbox. Duplicate open alerts are coalesced.
+- Added fixed-endpoint, read-only Vercel deployment and Supabase project adapters. Requests use HTTPS GET only, have an 8-second timeout and a 1 MB response cap. The adapters select and bound returned fields and never return provider tokens.
+- Added an owner-authenticated provider overview route and a fixed native Tauri command. Provider credentials are read from gateway process environment variables only; they are not accepted from the webview or stored in the registry.
+- Added a Monitoring page with provider status, deployment/project summaries and manual refresh.
+
+### Current limitations
+
+- Provider checks are request-triggered when the owner opens or refreshes Monitoring. There is no background polling, webhook receiver, push notification, encrypted credential vault or monitoring while JARVIS is closed.
+- Vercel and Supabase show `not_configured` until their respective environment variables are configured. Source implementation alone does not prove a live account connection.
+- Do not ask the owner to paste API tokens into chat. The next credential milestone is native OS-backed secret storage (Windows Credential Manager or a reviewed equivalent), with secret values never entering React state or logs. Only after that should background scheduling be introduced.
+
+### CI verification for this continuation
+
+- Run #194 (run ID `43694051719`, commit `5639baf145b9aa4080144ab278e110b09799b0f4`): gateway and desktop jobs passed; native-shell was still in progress at the time of this entry. Do not describe the entire run as green until native-shell completes successfully.
+- The earlier monitoring commits had failed CI due to Ruff import ordering and one TypeScript refresh-handler error; those were corrected in subsequent commits. Run #194 is the first run after the import-order correction.
