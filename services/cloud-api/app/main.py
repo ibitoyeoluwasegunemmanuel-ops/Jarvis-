@@ -48,6 +48,8 @@ def authenticated_user(authorization: Annotated[str | None, Header()] = None) ->
             audience="authenticated", issuer=issuer,
             options={"require": ["exp", "iat", "sub", "iss", "aud"]}, leeway=30,
         )
+        if claims.get("role") != "authenticated":
+            raise jwt.InvalidTokenError("authenticated_role_required")
         return str(uuid.UUID(claims["sub"]))
     except (jwt.PyJWTError, ValueError, KeyError):
         raise HTTPException(status_code=401, detail="invalid_access_token") from None
