@@ -154,6 +154,19 @@ def register_device(payload: DeviceRegistration, user_id: UserId) -> dict:
         ).fetchone()
 
 
+@app.post("/v1/devices/{device_id}/heartbeat")
+def heartbeat_device(device_id: uuid.UUID, user_id: UserId) -> dict[str, bool]:
+    with user_connection(user_id) as db:
+        cursor = db.execute(
+            """UPDATE jarvis.devices SET last_seen_at = now()
+               WHERE id = %s AND user_id = %s AND revoked_at IS NULL""",
+            (device_id, user_id),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(status_code=404, detail="active_device_not_found")
+    return {"alive": True}
+
+
 @app.delete("/v1/devices/{device_id}")
 def revoke_device(device_id: uuid.UUID, user_id: UserId) -> dict[str, bool]:
     with user_connection(user_id) as db:
