@@ -1,3 +1,12 @@
+## Monitoring foundation (Nov 15, 2026)
+
+- Added an owner-authenticated monitoring connector registry for Vercel, Supabase, GitHub and manual sources. It records workspace, provider, declared scopes, connection state and last-check/last-success timestamps.
+- The initial registry rejects write/admin scopes; no provider secrets are stored in this registry.
+- Added an owner-authenticated alert inbox with severity, source reference, first/last seen times and duplicate-open-alert coalescing.
+- Added API routes under `/v1/monitoring` for connector listing/registration/health metadata and alert listing/creation/acknowledgement.
+- This is a metadata and alert foundation only. It does **not** yet poll Vercel/Supabase/GitHub, receive webhooks, store provider credentials, send notifications, or monitor while the desktop process is offline.
+- Next: complete CI, implement encrypted connector secret storage and one actual read-only provider adapter, then schedule health checks and deliver mobile notifications.
+
 # JARVIS — Build Status
 
 Last updated: 2026-11-14
