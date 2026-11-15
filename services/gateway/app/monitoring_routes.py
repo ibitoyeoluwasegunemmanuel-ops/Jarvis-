@@ -12,6 +12,7 @@ from app.monitoring_store import (
     register_connector,
     update_connector_health,
 )
+from app.monitoring_providers import provider_overview
 from app.owner_auth import owner_session_is_valid
 
 router = APIRouter(prefix="/v1/monitoring", tags=["monitoring"])
@@ -108,3 +109,12 @@ def alert_acknowledge(
     if result is None:
         raise HTTPException(status_code=404, detail="monitor_alert_not_found")
     return result
+
+
+
+@router.get("/providers/overview")
+def provider_overview_read(
+    _: None = Depends(require_monitoring_owner),
+) -> dict:
+    """Fetch read-only summaries from configured provider tokens."""
+    return provider_overview()
