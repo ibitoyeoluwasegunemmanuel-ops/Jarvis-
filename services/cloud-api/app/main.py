@@ -91,18 +91,21 @@ def health() -> dict[str, str]:
 def create_workspace(payload: WorkspaceCreate, user_id: UserId) -> dict:
     workspace_id = uuid.uuid4()
     with user_connection(user_id) as db:
-        workspace = db.execute(
+        db.execute(
             """INSERT INTO jarvis.workspaces (id, name, owner_user_id, timezone, locale)
-               VALUES (%s, %s, %s, %s, %s)
-               RETURNING id, name, timezone, locale, created_at""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (workspace_id, payload.name.strip(), user_id, payload.timezone, payload.locale),
-        ).fetchone()
+        )
         db.execute(
             """INSERT INTO jarvis.workspace_members (workspace_id, user_id, role)
                VALUES (%s, %s, 'owner')""",
             (workspace_id, user_id),
         )
-        return workspace
+        return db.execute(
+            """SELECT id, name, timezone, locale, created_at
+               FROM jarvis.workspaces WHERE id = %s""",
+            (workspace_id,),
+        ).fetchone()
 
 
 @app.get("/v1/devices")
