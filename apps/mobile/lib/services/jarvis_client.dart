@@ -260,6 +260,10 @@ class JarvisClient {
     ) as List<dynamic>;
   }
 
+  Future<void> heartbeatDevice(String deviceId) async {
+    await post('/v1/devices/$deviceId/heartbeat', {});
+  }
+
   Future<void> revokeDevice(String deviceId) async {
     await delete('/v1/devices/$deviceId');
   }
