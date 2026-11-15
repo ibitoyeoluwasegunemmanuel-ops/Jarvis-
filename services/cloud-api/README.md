@@ -13,10 +13,13 @@ loopback-only and must never be exposed to a phone, LAN, tunnel, or public IP.
 - Provides workspace-scoped read access to projects and monitoring alerts.
 - Exposes only a non-sensitive liveness endpoint without authentication.
 
-This is a backend foundation, not yet a complete mobile sign-in flow. Workspace
-membership management/invitations, refresh-token handling in the app, push-token
-delivery, alert workers, approvals, realtime events, and production deployment
-are not included.
+The Flutter mobile source now includes Supabase Auth email/password sign-in,
+secure access/refresh token storage, workspace discovery/creation, device
+registration/revocation, and read calls for workspace projects and alerts.
+The service itself does not issue or store passwords or refresh tokens; Supabase
+Auth owns the identity session. Workspace invitations/membership administration,
+push-token delivery, alert workers, approvals, realtime events, and production
+deployment are not included.
 
 ## Required configuration
 
