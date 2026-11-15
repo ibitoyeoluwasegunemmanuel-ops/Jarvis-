@@ -166,3 +166,22 @@
 .approval-actions button:last-child{background:#542d37;border-color:#7d3d4a;color:#ffe9ed}
 .approval-actions button:disabled{opacity:.5;cursor:wait}
 .project-decision-item pre{margin:8px 0 0;padding:9px;border:1px solid #ffffff10;border-radius:6px;background:#0c111c;color:#aeb8cf;font:9px 'DM Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+
+
+.monitoring-workspace{padding-bottom:12px}
+.monitor-intro{max-width:720px;color:#8b92a7;font-size:11px;line-height:1.75;margin:0 0 18px}
+.monitor-refresh{border:1px solid #9b87f044;border-radius:7px;background:#8a75e615;color:#c7bcff;padding:9px 13px;font-size:10px;cursor:pointer}
+.monitor-refresh:hover{background:#8a75e626}
+.monitor-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.monitor-provider{min-height:210px}
+.monitor-state{font:8px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.5px;border:1px solid #ffffff1c;border-radius:5px;padding:5px 7px;color:#d7b979}
+.monitor-state.connected{color:#79d9ad;border-color:#56c99a35;background:#36a87815}
+.monitor-state.unavailable{color:#ffc1ad;border-color:#dc8c7745;background:#3a1d1b66}
+.monitor-state.not_configured{color:#d7b979;border-color:#bd8d3b35;background:#bd8d3b15}
+.monitor-items{display:grid;gap:8px;margin-top:17px}
+.monitor-items>p{font-size:10px;line-height:1.7}
+.monitor-item{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #ffffff0d}
+.monitor-item:last-child{border-bottom:0}
+.monitor-item b{font-size:10px;color:#e2e5f2;overflow-wrap:anywhere}
+.monitor-item span{font:8px 'DM Mono',monospace;color:#858da3;text-align:right}
+@media(max-width:760px){.monitor-provider-grid{grid-template-columns:1fr}.monitor-item{flex-direction:column;gap:5px}.monitor-item span{text-align:left}}
