@@ -445,6 +445,9 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
         for entry in vault.values_mut() { entry.value.zeroize(); }
         vault.clear();
     }
+    if let Ok(mut cloud_session) = runtime.cloud_session.lock() {
+        drop(cloud_session.take());
+    }
     let owner_session = runtime
         .owner_session
         .lock()
