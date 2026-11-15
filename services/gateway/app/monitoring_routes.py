@@ -4,7 +4,6 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.owner_auth import owner_session_is_valid
 from app.monitoring_store import (
     acknowledge_alert,
     create_alert,
@@ -13,6 +12,7 @@ from app.monitoring_store import (
     register_connector,
     update_connector_health,
 )
+from app.owner_auth import owner_session_is_valid
 
 router = APIRouter(prefix="/v1/monitoring", tags=["monitoring"])
 
