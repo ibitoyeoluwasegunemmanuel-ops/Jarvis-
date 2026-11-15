@@ -1,3 +1,4 @@
+# isort: skip_file
 import pytest
 from fastapi.testclient import TestClient
 
