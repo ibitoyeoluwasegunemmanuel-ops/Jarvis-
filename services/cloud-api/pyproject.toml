@@ -19,12 +19,12 @@ dev = ["pytest>=8.3,<9.0", "httpx>=0.28,<1.0", "ruff>=0.9,<1.0"]
 
 [tool.ruff]
 line-length = 100
+target-version = "py311"
 
 [tool.ruff.lint]
 # FastAPI Query defaults are intentional dependency declarations; keep the
 # database transaction context nested for explicit transaction scope.
 ignore = ["B008", "SIM117"]
-target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
