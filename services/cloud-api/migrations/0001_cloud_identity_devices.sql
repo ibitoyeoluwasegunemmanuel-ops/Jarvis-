@@ -66,9 +66,12 @@ CREATE INDEX IF NOT EXISTS alerts_workspace_status_last_seen
     ON jarvis.monitoring_alerts(workspace_id, status, last_seen_at DESC);
 
 CREATE OR REPLACE FUNCTION jarvis.current_user_id()
-RETURNS uuid LANGUAGE sql STABLE AS $$
+RETURNS uuid LANGUAGE sql STABLE AS $
     SELECT nullif(current_setting('jarvis.user_id', true), '')::uuid
-$$;
+$;
+
+REVOKE ALL ON FUNCTION jarvis.current_user_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION jarvis.current_user_id() TO jarvis_api;
 
 ALTER TABLE jarvis.workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jarvis.workspace_members ENABLE ROW LEVEL SECURITY;
@@ -83,7 +86,7 @@ CREATE POLICY workspace_member_read ON jarvis.workspaces
         owner_user_id = jarvis.current_user_id()
         OR EXISTS (
             SELECT 1 FROM jarvis.workspace_members wm
-            WHERE wm.workspace_id = id
+            WHERE wm.workspace_id = workspaces.id
               AND wm.user_id = jarvis.current_user_id()
         )
     );
