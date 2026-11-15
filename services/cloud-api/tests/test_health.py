@@ -15,3 +15,9 @@ def test_private_routes_require_bearer_token():
     response = client.get("/v1/devices", params={"workspace_id": "00000000-0000-0000-0000-000000000001"})
     assert response.status_code == 401
     assert response.json()["detail"] == "bearer_token_required"
+
+
+def test_workspace_list_requires_bearer_token():
+    response = client.get("/v1/workspaces")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "bearer_token_required"
