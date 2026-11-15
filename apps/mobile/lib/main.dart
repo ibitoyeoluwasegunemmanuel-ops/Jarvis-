@@ -58,10 +58,10 @@ class _JarvisHomeState extends State<JarvisHome> {
       await client.load();
       if (client.isConfigured && client.isSignedIn) {
         await loadWorkspaces();
-        if (workspace != null) await ensureDevice();
+        if (workspace != null) { await ensureDevice(); }
       }
     } catch (e) { error = e.toString(); }
-    if (mounted) setState(() => loading = false);
+    if (mounted) { setState(() => loading = false); }
   }
 
   Future<void> loadWorkspaces({String? selectId}) async {
@@ -81,7 +81,7 @@ class _JarvisHomeState extends State<JarvisHome> {
   }
 
   Future<void> refreshData() async {
-    if (workspaceId.isEmpty) return;
+    if (workspaceId.isEmpty) { return; }
     final id = workspaceId;
     final values = await Future.wait([
       client.overview(id), client.projects(id), client.alerts(id), client.devices(id),
@@ -96,7 +96,7 @@ class _JarvisHomeState extends State<JarvisHome> {
     setState(() { busy = true; error = null; });
     try { await action(); }
     catch (e) { error = e.toString(); }
-    if (mounted) setState(() => busy = false);
+    if (mounted) { setState(() => busy = false); }
   }
 
   Future<void> afterAuth() async {
@@ -113,7 +113,7 @@ class _JarvisHomeState extends State<JarvisHome> {
       await client.heartbeatDevice(existing);
       return;
     }
-    if (existing != null) await storage.delete(key: deviceStorageKey);
+    if (existing != null) { await storage.delete(key: deviceStorageKey); }
     final platform = switch (defaultTargetPlatform) {
       TargetPlatform.android => 'android',
       TargetPlatform.iOS => 'ios',
@@ -141,7 +141,7 @@ class _JarvisHomeState extends State<JarvisHome> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (loading) { return const Scaffold(body: Center(child: CircularProgressIndicator())); }
     if (!client.isConfigured) return ConfigPage(
       error: error, busy: busy,
       onSave: (api,supa,key) => run(() async {
@@ -264,7 +264,7 @@ class _JarvisHomeState extends State<JarvisHome> {
                 await client.revokeDevice(d['id'].toString());
                 final deviceStorageKey = 'jarvis_registered_device_id_$workspaceId';
                 final local = await storage.read(key: deviceStorageKey);
-                if (local == d['id'].toString()) await storage.delete(key: deviceStorageKey);
+                if (local == d['id'].toString()) { await storage.delete(key: deviceStorageKey); }
                 await refreshData();
               }),
             ),
