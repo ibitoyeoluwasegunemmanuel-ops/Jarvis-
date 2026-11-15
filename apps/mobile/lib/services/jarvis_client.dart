@@ -110,7 +110,7 @@ class JarvisClient {
         .timeout(const Duration(seconds: 15));
     final decoded = _decode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw JarvisException(_message(decoded, 'Authentication failed.'));
+      throw JarvisException(_message(decoded, 'Authentication failed.'), statusCode: response.statusCode);
     }
     return decoded;
   }
@@ -144,8 +144,10 @@ class JarvisClient {
         {'refresh_token': refresh},
       );
       await _acceptSession(response);
-    } catch (_) {
-      await _clearLocalSession();
+    } on JarvisException catch (error) {
+      if (error.statusCode == 400 || error.statusCode == 401) {
+        await _clearLocalSession();
+      }
       rethrow;
     }
   }
@@ -318,8 +320,9 @@ class JarvisClient {
 }
 
 class JarvisException implements Exception {
-  const JarvisException(this.message);
+  const JarvisException(this.message, {this.statusCode});
   final String message;
+  final int? statusCode;
 
   @override
   String toString() => message;
