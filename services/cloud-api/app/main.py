@@ -73,6 +73,16 @@ class WorkspaceCreate(BaseModel):
     locale: str = Field(default="en-NG", min_length=2, max_length=20)
 
 
+class ProjectSync(BaseModel):
+    model_config = {"extra": "forbid"}
+    workspace_id: uuid.UUID
+    source_local_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    status: Literal["active", "paused", "completed"] = "active"
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
+
+
 class DeviceRegistration(BaseModel):
     model_config = {"extra": "forbid"}
     workspace_id: uuid.UUID
@@ -178,6 +188,28 @@ def revoke_device(device_id: uuid.UUID, user_id: UserId) -> dict[str, bool]:
         if cursor.rowcount != 1:
             raise HTTPException(status_code=404, detail="active_device_not_found")
     return {"revoked": True}
+
+
+@app.post("/v1/projects/sync", status_code=200)
+def sync_project(payload: ProjectSync, user_id: UserId) -> dict:
+    # Stable cloud slug derived from the workspace and immutable local project ID.
+    slug = "local-" + uuid.uuid5(payload.workspace_id, payload.source_local_id).hex
+    with user_connection(user_id) as db:
+        return db.execute(
+            """INSERT INTO jarvis.projects
+               (workspace_id, source_local_id, name, slug, description, status, priority, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+               ON CONFLICT (workspace_id, source_local_id) DO UPDATE SET
+                 name = EXCLUDED.name,
+                 description = EXCLUDED.description,
+                 status = EXCLUDED.status,
+                 priority = EXCLUDED.priority,
+                 updated_at = now()
+               RETURNING id, workspace_id, source_local_id, name, slug,
+                         description, status, priority, updated_at""",
+            (payload.workspace_id, payload.source_local_id, payload.name.strip(),
+             slug, payload.description.strip(), payload.status, payload.priority),
+        ).fetchone()
 
 
 @app.get("/v1/projects")
