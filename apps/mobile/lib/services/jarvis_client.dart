@@ -19,7 +19,7 @@ class JarvisClient {
 
   bool get isConfigured =>
       _apiUrl.isNotEmpty && _supabaseUrl.isNotEmpty && _publicKey.isNotEmpty;
-  bool get isSignedIn => _accessToken != null && _refreshToken != null;
+  bool get isSignedIn => (_accessToken?.isNotEmpty ?? false) && (_refreshToken?.isNotEmpty ?? false);
   String get apiUrl => _apiUrl;
 
   Future<void> load() async {
@@ -118,7 +118,7 @@ class JarvisClient {
   Future<void> _acceptSession(Map<String, dynamic> data) async {
     final access = data['access_token'];
     final refresh = data['refresh_token'];
-    if (access is! String || refresh is! String) {
+    if (access is! String || access.isEmpty || refresh is! String || refresh.isEmpty) {
       throw const JarvisException(
         'No active session was returned. Check whether email confirmation is required.',
       );
@@ -206,6 +206,9 @@ class JarvisClient {
     if (response.statusCode == 401 && retry) {
       await _refreshSession();
       return _apiRequest(method, path, query: query, body: body, retry: false);
+    }
+    if (response.statusCode == 401) {
+      await _clearLocalSession();
     }
     final decoded = _decode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
