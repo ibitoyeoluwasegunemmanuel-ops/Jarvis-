@@ -70,48 +70,63 @@ RETURNS uuid LANGUAGE sql STABLE AS $$
     SELECT nullif(current_setting('jarvis.user_id', true), '')::uuid
 $$;
 
--- SECURITY DEFINER prevents recursive RLS evaluation on workspace_members.
-CREATE OR REPLACE FUNCTION jarvis.is_workspace_member(target_workspace uuid)
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = pg_catalog, jarvis
-AS $$
-    SELECT EXISTS (
-        SELECT 1 FROM jarvis.workspace_members wm
-        WHERE wm.workspace_id = target_workspace
-          AND wm.user_id = jarvis.current_user_id()
-    )
-$$;
-
-REVOKE ALL ON FUNCTION jarvis.is_workspace_member(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION jarvis.is_workspace_member(uuid) TO jarvis_api;
-
 ALTER TABLE jarvis.workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jarvis.workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jarvis.devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jarvis.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jarvis.monitoring_alerts ENABLE ROW LEVEL SECURITY;
 
+-- A workspace owner can read their own newly-created workspace before their
+-- first membership row is inserted. Other access is membership-scoped.
 CREATE POLICY workspace_member_read ON jarvis.workspaces
-    FOR SELECT USING (jarvis.is_workspace_member(id));
+    FOR SELECT USING (
+        owner_user_id = jarvis.current_user_id()
+        OR EXISTS (
+            SELECT 1 FROM jarvis.workspace_members wm
+            WHERE wm.workspace_id = id
+              AND wm.user_id = jarvis.current_user_id()
+        )
+    );
+
 CREATE POLICY workspace_member_read_self ON jarvis.workspace_members
     FOR SELECT USING (user_id = jarvis.current_user_id());
+
 CREATE POLICY device_owner_all ON jarvis.devices
     FOR ALL USING (
         user_id = jarvis.current_user_id()
-        AND jarvis.is_workspace_member(workspace_id)
+        AND EXISTS (
+            SELECT 1 FROM jarvis.workspace_members wm
+            WHERE wm.workspace_id = workspace_id
+              AND wm.user_id = jarvis.current_user_id()
+        )
     )
     WITH CHECK (
         user_id = jarvis.current_user_id()
-        AND jarvis.is_workspace_member(workspace_id)
+        AND EXISTS (
+            SELECT 1 FROM jarvis.workspace_members wm
+            WHERE wm.workspace_id = workspace_id
+              AND wm.user_id = jarvis.current_user_id()
+        )
     );
-CREATE POLICY project_member_read ON jarvis.projects
-    FOR SELECT USING (jarvis.is_workspace_member(workspace_id));
-CREATE POLICY alert_member_read ON jarvis.monitoring_alerts
-    FOR SELECT USING (jarvis.is_workspace_member(workspace_id));
 
--- Runtime role grants are intentionally explicit. Create jarvis_api separately
--- as a LOGIN role with NOBYPASSRLS, then grant it only the required operations.
+CREATE POLICY project_member_read ON jarvis.projects
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM jarvis.workspace_members wm
+            WHERE wm.workspace_id = workspace_id
+              AND wm.user_id = jarvis.current_user_id()
+        )
+    );
+
+CREATE POLICY alert_member_read ON jarvis.monitoring_alerts
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM jarvis.workspace_members wm
+            WHERE wm.workspace_id = workspace_id
+              AND wm.user_id = jarvis.current_user_id()
+        )
+    );
+
 GRANT USAGE ON SCHEMA jarvis TO jarvis_api;
 GRANT SELECT ON jarvis.workspaces, jarvis.workspace_members,
     jarvis.projects, jarvis.monitoring_alerts TO jarvis_api;
