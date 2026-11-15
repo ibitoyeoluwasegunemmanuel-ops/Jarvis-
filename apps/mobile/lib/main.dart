@@ -97,7 +97,9 @@ class _JarvisHomeState extends State<JarvisHome> {
     if (workspaceId.isEmpty) return;
     final deviceStorageKey = 'jarvis_registered_device_id_$workspaceId';
     final existing = await storage.read(key: deviceStorageKey);
-    if (existing != null && existing.isNotEmpty) return;
+    if (existing != null && existing.isNotEmpty &&
+        devices.any((item) => item['id'].toString() == existing)) return;
+    if (existing != null) await storage.delete(key: deviceStorageKey);
     final platform = switch (defaultTargetPlatform) {
       TargetPlatform.android => 'android',
       TargetPlatform.iOS => 'ios',
@@ -228,7 +230,7 @@ class _JarvisHomeState extends State<JarvisHome> {
         const SizedBox(height: 12),
         const Text('One JARVIS. All your devices.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        const Text('Review devices connected to this workspace. You can revoke a device if you no longer trust it.', style: TextStyle(color: muted, height: 1.5)),
+        const Text('Review devices registered by your account. You can revoke a device if you no longer trust it.', style: TextStyle(color: muted, height: 1.5)),
         const SizedBox(height: 16),
         SectionHeader('REGISTERED DEVICES', onRefresh: () => run(refreshData)),
         if (devices.isEmpty) const EmptyLine('No active devices were returned by the cloud service.')
