@@ -365,6 +365,8 @@ export default function App() {
 
   const connectCloudAndSync = async (event: FormEvent) => {
     event.preventDefault();
+    const submittedPassword = cloudPassword;
+    setCloudPassword("");
     setCloudSyncBusy(true);
     setCloudSyncError("");
     try {
@@ -373,10 +375,22 @@ export default function App() {
         supabaseUrl: cloudSupabaseUrl,
         publicKey: cloudPublicKey,
         email: cloudEmail,
-        password: cloudPassword
+        password: submittedPassword
       });
       setCloudSyncStatus(status);
-      setCloudPassword("");
+    } catch (error) {
+      setCloudSyncError(String(error));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  };
+
+  const disconnectCloud = async () => {
+    setCloudSyncBusy(true);
+    setCloudSyncError("");
+    try {
+      await invoke("disconnect_cloud");
+      setCloudSyncStatus(null);
     } catch (error) {
       setCloudSyncError(String(error));
     } finally {
@@ -996,6 +1010,9 @@ export default function App() {
                   <button type="button" disabled={cloudSyncBusy} onClick={syncCloudProjects}>
                     <Radio size={15}/>{cloudSyncBusy ? "Syncing…" : "Sync projects now"}
                   </button>
+                  <button type="button" disabled={cloudSyncBusy} onClick={disconnectCloud}>
+                    Disconnect
+                  </button>
                 </div>
               ) : (
                 <form className="project-form" onSubmit={connectCloudAndSync}>
@@ -1010,7 +1027,7 @@ export default function App() {
                   <label htmlFor="cloud-password">Account password</label>
                   <input id="cloud-password" type="password" required value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} autoComplete="current-password"/>
                   <div className="project-form-footer">
-                    <span>Secrets stay in native process memory, not the webview storage.</span>
+                    <span>The password is cleared from this form after submission. The cloud session stays in native memory for this app run and must be reconnected after restarting Windows JARVIS.</span>
                     <button type="submit" disabled={cloudSyncBusy}>
                       <ShieldCheck size={15}/>{cloudSyncBusy ? "Connecting…" : "Connect and sync"}
                     </button>
