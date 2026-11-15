@@ -1,3 +1,11 @@
+## Cloud database policy hardening (Nov 15, 2026)
+
+- Removed SECURITY DEFINER membership/bootstrap helpers from the cloud schema migrations.
+- Replaced them with direct, table-qualified membership EXISTS predicates under RLS. Workspace owners can read their own initial workspace to complete first-membership bootstrap; workspace members are scoped to their own membership row.
+- Revoked PUBLIC execute on the transaction-local current-user helper and granted it only to the dedicated API runtime role.
+- The migration set now requires creating the NOBYPASSRLS `jarvis_api` role first, then applying migrations 0001, 0002 and 0003 in order.
+- No live Supabase/PostgreSQL instance is connected yet, so database execution and Supabase advisors remain unverified.
+
 ## Windows desktop cloud connection and initial project sync (Nov 15, 2026)
 
 - Added native Tauri cloud sign-in using the same Supabase Auth email/password account as mobile.
