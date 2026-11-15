@@ -1,3 +1,13 @@
+## Windows desktop cloud connection and initial project sync (Nov 15, 2026)
+
+- Added native Tauri cloud sign-in using the same Supabase Auth email/password account as mobile.
+- Added native-only cloud session storage in process memory; access/refresh tokens are zeroized on replacement, disconnect, owner logout and application exit. The session is not persisted between desktop launches yet, so the owner reconnects after restarting the app.
+- Added Windows device registration/heartbeat in the cloud workspace.
+- Added an idempotent first sync of local desktop project records into the shared cloud workspace, keyed by the immutable local project ID.
+- Added a Projects-page cloud connection panel with explicit Connect, Sync now and Disconnect controls.
+- Current sync scope is project metadata only (name, description, status). Tasks, decisions, milestones, risks, memory and audit history are not yet synchronised. Sync is manually triggered; automatic/background sync is not implemented.
+- Rust/Tauri/React changes have not yet been compiled or run through CI. Do not treat this as a verified desktop release. Cloud service/database configuration is also still outstanding.
+
 ## Desktop-to-cloud project sync API (Nov 15, 2026)
 
 - Added `POST /v1/projects/sync` to upsert desktop projects into the shared workspace using a stable local-project identifier. Repeated sync calls update the same cloud row rather than creating duplicates.
