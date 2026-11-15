@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+// Flutter 3.50 currently marks the stable Material library as deprecated.
+// Keep using the stable Flutter SDK Material API until its replacement is supported.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'services/jarvis_client.dart';
@@ -154,8 +157,11 @@ class _JarvisHomeState extends State<JarvisHome> {
       }),
       onSignup: (email,password) => run(() async {
         final signedIn = await client.signUp(email,password);
-        if (signedIn) { await afterAuth(); }
-        else { error = 'Account created. Confirm your email, then sign in.'; }
+        if (signedIn) {
+          await afterAuth();
+        } else {
+          error = 'Account created. Confirm your email, then sign in.';
+        }
         if (mounted) setState(() {});
       }),
     );
@@ -210,7 +216,7 @@ class _JarvisHomeState extends State<JarvisHome> {
         const Text('Your work, in your pocket.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
-          value: workspaceId,
+          initialValue: workspaceId,
           decoration: const InputDecoration(labelText: 'Active workspace'),
           items: workspaces.map((w) => DropdownMenuItem<String>(
             value: w['id'].toString(), child: Text(w['name']?.toString() ?? 'Workspace'),
