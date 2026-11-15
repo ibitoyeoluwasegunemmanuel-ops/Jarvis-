@@ -1,3 +1,13 @@
+## Cross-device cloud API foundation (Nov 15, 2026)
+
+- Added a separate `services/cloud-api` FastAPI service; it does not reuse or expose the Windows loopback gateway.
+- Added Supabase Auth asymmetric JWT verification (JWKS, issuer, audience, expiry and UUID subject checks).
+- Added PostgreSQL migrations for workspaces, memberships, registered devices, projects and monitoring alerts, with RLS enabled and transaction-local user identity derived only from the verified token.
+- Added owner workspace bootstrap, device registration/list/revocation, workspace overview, project listing and monitoring-alert read endpoints.
+- Added cloud API lint/test workflow and basic unauthenticated-route tests.
+- Not yet verified by CI at this update. No cloud database, Supabase Auth project, production runtime role, hosting environment, or secrets have been configured. The service is source code only and is not deployed.
+- Not yet implemented: mobile login/token refresh integration, device push tokens, notification delivery, background cloud monitoring workers, approval endpoints, live event stream, cloud sync writes, workspace invitation/membership management, backups or production observability.
+
 ## Read-only provider adapters (Nov 15, 2026)
 
 - Added fixed-endpoint Vercel deployment and Supabase project-list adapters.
