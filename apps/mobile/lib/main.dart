@@ -65,15 +65,23 @@ class _MobileHomeState extends State<MobileHome> {
   }
 
   Future<void> _loadSettings() async {
-    final saved = await _storage.read(key: 'jarvis_api_base_url');
-    if (!mounted) return;
-    setState(() {
-      _apiUrl = saved ?? '';
-      _urlController.text = _apiUrl;
-      if (_apiUrl.isNotEmpty) {
-        _detail = 'Server address saved. Check the connection to continue.';
-      }
-    });
+    try {
+      final saved = await _storage.read(key: 'jarvis_api_base_url');
+      if (!mounted) return;
+      setState(() {
+        _apiUrl = saved ?? '';
+        _urlController.text = _apiUrl;
+        if (_apiUrl.isNotEmpty) {
+          _detail = 'Server address saved. Check the connection to continue.';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _connection = 'Secure storage unavailable';
+        _detail = 'This build could not access platform secure storage. Use a real Android or iOS device build.';
+      });
+    }
   }
 
   Future<void> _saveAndCheck() async {
