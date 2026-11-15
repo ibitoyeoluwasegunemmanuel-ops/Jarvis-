@@ -28,7 +28,7 @@ CREATE POLICY project_member_write ON jarvis.projects
     WITH CHECK (
         EXISTS (
             SELECT 1 FROM jarvis.workspace_members wm
-            WHERE wm.workspace_id = workspace_id
+            WHERE wm.workspace_id = projects.workspace_id
               AND wm.user_id = jarvis.current_user_id()
               AND wm.role IN ('owner', 'admin', 'member')
         )
