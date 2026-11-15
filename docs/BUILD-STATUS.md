@@ -1,3 +1,12 @@
+## Read-only provider adapters (Nov 15, 2026)
+
+- Added fixed-endpoint Vercel deployment and Supabase project-list adapters.
+- Endpoint: `GET /v1/monitoring/providers/overview` (requires gateway process session and owner session).
+- Optional local gateway environment variables: `VERCEL_TOKEN` and `SUPABASE_ACCESS_TOKEN`. Use narrowly scoped read-only tokens. The adapters read these variables at request time; they do not persist or return the token values.
+- Only HTTPS GET calls to the providers' fixed API hosts are made. Responses are size-limited and reduced to selected deployment/project metadata.
+- If a token is absent, the provider reports `not_configured`; connection failures are reported as unavailable. No background polling, webhooks, notification delivery, or token vault is included yet.
+- Official API references: Vercel REST API https://vercel.com/docs/rest-api ; Supabase Management API https://supabase.com/docs/reference/api/introduction and list projects https://supabase.com/docs/reference/api/v1-list-all-projects.
+
 ## Monitoring foundation (Nov 15, 2026)
 
 - Added an owner-authenticated monitoring connector registry for Vercel, Supabase, GitHub and manual sources. It records workspace, provider, declared scopes, connection state and last-check/last-success timestamps.
