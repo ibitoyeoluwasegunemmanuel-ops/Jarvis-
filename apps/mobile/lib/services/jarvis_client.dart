@@ -186,10 +186,13 @@ class JarvisClient {
       switch (method) {
         case 'POST':
           response = await _http.post(uri, headers: headers, body: jsonEncode(body));
+          break;
         case 'DELETE':
           response = await _http.delete(uri, headers: headers);
+          break;
         default:
           response = await _http.get(uri, headers: headers);
+          break;
       }
     } on Exception {
       rethrow;
