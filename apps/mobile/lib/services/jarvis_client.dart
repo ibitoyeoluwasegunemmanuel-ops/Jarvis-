@@ -103,7 +103,6 @@ class JarvisClient {
           Uri.parse('$_supabaseUrl$path'),
           headers: {
             'apikey': _publicKey,
-            'Authorization': 'Bearer $_publicKey',
             'Content-Type': 'application/json',
           },
           body: jsonEncode(body),
