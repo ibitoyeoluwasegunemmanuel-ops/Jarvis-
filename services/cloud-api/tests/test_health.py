@@ -29,3 +29,16 @@ def test_device_heartbeat_requires_bearer_token():
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "bearer_token_required"
+
+
+def test_project_sync_requires_bearer_token():
+    response = client.post(
+        "/v1/projects/sync",
+        json={
+            "workspace_id": "00000000-0000-0000-0000-000000000001",
+            "source_local_id": "local-project-1",
+            "name": "Example project",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "bearer_token_required"
