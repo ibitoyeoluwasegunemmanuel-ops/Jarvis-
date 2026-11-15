@@ -21,3 +21,11 @@ def test_workspace_list_requires_bearer_token():
     response = client.get("/v1/workspaces")
     assert response.status_code == 401
     assert response.json()["detail"] == "bearer_token_required"
+
+
+def test_device_heartbeat_requires_bearer_token():
+    response = client.post(
+        "/v1/devices/00000000-0000-0000-0000-000000000001/heartbeat"
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "bearer_token_required"
