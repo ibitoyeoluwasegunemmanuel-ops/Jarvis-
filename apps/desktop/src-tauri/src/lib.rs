@@ -1055,6 +1055,16 @@ async fn sync_cloud_projects(
 }
 
 #[tauri::command]
+fn disconnect_cloud(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<(), String> {
+    let mut guard = runtime.cloud_session.lock()
+        .map_err(|_| "native_cloud_session_unavailable".to_string())?;
+    drop(guard.take());
+    Ok(())
+}
+
+#[tauri::command]
 fn get_cloud_sync_status(
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<Option<CloudSyncStatus>, String> {
@@ -1743,6 +1753,7 @@ pub fn run() {
             connect_cloud_and_sync,
             sync_cloud_projects,
             get_cloud_sync_status,
+            disconnect_cloud,
             setup_owner,
             login_owner,
             logout_owner,
