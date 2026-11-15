@@ -185,14 +185,15 @@ def list_monitoring_alerts(
     status: Literal["open", "acknowledged", "resolved"] | None = None,
 ) -> list[dict]:
     with user_connection(user_id) as db:
-        return db.execute(
-            """SELECT id, severity, title, summary, source_ref, status,
-                      first_seen_at, last_seen_at, acknowledged_at
-               FROM jarvis.monitoring_alerts
-               WHERE workspace_id = %s AND (%s IS NULL OR status = %s)
-               ORDER BY last_seen_at DESC LIMIT 200""",
-            (workspace_id, status, status),
-        ).fetchall()
+        query = """SELECT id, severity, title, summary, source_ref, status,
+                            first_seen_at, last_seen_at, acknowledged_at
+                     FROM jarvis.monitoring_alerts WHERE workspace_id = %s"""
+        params: tuple[object, ...] = (workspace_id,)
+        if status is not None:
+            query += " AND status = %s"
+            params += (status,)
+        query += " ORDER BY last_seen_at DESC LIMIT 200"
+        return db.execute(query, params).fetchall()
 
 
 @app.get("/v1/workspace/overview")
