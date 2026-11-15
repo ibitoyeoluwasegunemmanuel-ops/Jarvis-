@@ -31,8 +31,7 @@ def _required_env(name: str) -> str:
 
 @lru_cache(maxsize=1)
 def _jwks_client() -> PyJWKClient:
-    url = _required_env("SUPABASE_JWKS_URL")
-    return PyJWKClient(url, cache_jwk_set=True, lifespan=300, timeout=5)
+    return PyJWKClient(_required_env("SUPABASE_JWKS_URL"), cache_jwk_set=True, lifespan=300, timeout=5)
 
 
 def authenticated_user(authorization: Annotated[str | None, Header()] = None) -> str:
@@ -45,25 +44,19 @@ def authenticated_user(authorization: Annotated[str | None, Header()] = None) ->
     try:
         signing_key = _jwks_client().get_signing_key_from_jwt(token)
         claims = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["ES256", "RS256"],
-            audience="authenticated",
-            issuer=issuer,
-            options={"require": ["exp", "iat", "sub", "iss", "aud"]},
-            leeway=30,
+            token, signing_key.key, algorithms=["ES256", "RS256"],
+            audience="authenticated", issuer=issuer,
+            options={"require": ["exp", "iat", "sub", "iss", "aud"]}, leeway=30,
         )
-        user_id = str(uuid.UUID(claims["sub"]))
+        return str(uuid.UUID(claims["sub"]))
     except (jwt.PyJWTError, ValueError, KeyError):
         raise HTTPException(status_code=401, detail="invalid_access_token") from None
-    return user_id
 
 
 @contextmanager
 def user_connection(user_id: str):
     database_url = _required_env("DATABASE_URL")
-    # DATABASE_URL must use a dedicated NOBYPASSRLS runtime role, never postgres
-    # or a Supabase service-role credential.
+    # This must be a dedicated NOBYPASSRLS role, never postgres or service-role.
     with connect(database_url, row_factory=dict_row, connect_timeout=5) as connection:
         with connection.transaction():
             connection.execute("SELECT set_config('jarvis.user_id', %s, true)", (user_id,))
@@ -71,6 +64,13 @@ def user_connection(user_id: str):
 
 
 UserId = Annotated[str, Depends(authenticated_user)]
+
+
+class WorkspaceCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=120)
+    timezone: str = Field(default="Africa/Lagos", min_length=1, max_length=80)
+    locale: str = Field(default="en-NG", min_length=2, max_length=20)
 
 
 class DeviceRegistration(BaseModel):
@@ -87,10 +87,28 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "jarvis-cloud-api", "version": app.version}
 
 
+@app.post("/v1/workspaces", status_code=201)
+def create_workspace(payload: WorkspaceCreate, user_id: UserId) -> dict:
+    workspace_id = uuid.uuid4()
+    with user_connection(user_id) as db:
+        workspace = db.execute(
+            """INSERT INTO jarvis.workspaces (id, name, owner_user_id, timezone, locale)
+               VALUES (%s, %s, %s, %s, %s)
+               RETURNING id, name, timezone, locale, created_at""",
+            (workspace_id, payload.name.strip(), user_id, payload.timezone, payload.locale),
+        ).fetchone()
+        db.execute(
+            """INSERT INTO jarvis.workspace_members (workspace_id, user_id, role)
+               VALUES (%s, %s, 'owner')""",
+            (workspace_id, user_id),
+        )
+        return workspace
+
+
 @app.get("/v1/devices")
 def list_devices(user_id: UserId, workspace_id: uuid.UUID = Query(...)) -> list[dict]:
     with user_connection(user_id) as db:
-        rows = db.execute(
+        return db.execute(
             """SELECT id, workspace_id, device_name, platform, os_version, app_version,
                       created_at, last_seen_at, revoked_at
                FROM jarvis.devices
@@ -98,14 +116,18 @@ def list_devices(user_id: UserId, workspace_id: uuid.UUID = Query(...)) -> list[
                ORDER BY last_seen_at DESC NULLS LAST""",
             (workspace_id,),
         ).fetchall()
-        return rows
 
 
 @app.post("/v1/devices", status_code=201)
 def register_device(payload: DeviceRegistration, user_id: UserId) -> dict:
     device_id = uuid.uuid4()
     with user_connection(user_id) as db:
-        row = db.execute(
+        permitted = db.execute(
+            "SELECT id FROM jarvis.workspaces WHERE id = %s", (payload.workspace_id,)
+        ).fetchone()
+        if permitted is None:
+            raise HTTPException(status_code=403, detail="workspace_access_denied")
+        return db.execute(
             """INSERT INTO jarvis.devices
                (id, workspace_id, user_id, device_name, platform, os_version, app_version)
                VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -114,9 +136,6 @@ def register_device(payload: DeviceRegistration, user_id: UserId) -> dict:
             (device_id, payload.workspace_id, user_id, payload.device_name.strip(),
              payload.platform, payload.os_version, payload.app_version),
         ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=403, detail="workspace_access_denied")
-        return row
 
 
 @app.delete("/v1/devices/{device_id}")
