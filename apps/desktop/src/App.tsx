@@ -42,6 +42,14 @@ type OwnerAuthStatus = {
   setup_required: boolean;
   authenticated: boolean;
 };
+type CloudSyncStatus = {
+  connected: boolean;
+  workspace_id: string;
+  workspace_name: string;
+  device_id: string;
+  synced_projects: number;
+};
+
 type Project = {
   id: string;
   name: string;
@@ -245,6 +253,14 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectError, setProjectError] = useState("");
+  const [cloudApiUrl, setCloudApiUrl] = useState("");
+  const [cloudSupabaseUrl, setCloudSupabaseUrl] = useState("");
+  const [cloudPublicKey, setCloudPublicKey] = useState("");
+  const [cloudEmail, setCloudEmail] = useState("");
+  const [cloudPassword, setCloudPassword] = useState("");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus | null>(null);
+  const [cloudSyncBusy, setCloudSyncBusy] = useState(false);
+  const [cloudSyncError, setCloudSyncError] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -337,6 +353,49 @@ export default function App() {
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!authStatus?.authenticated) return;
+    let cancelled = false;
+    invoke<CloudSyncStatus | null>("get_cloud_sync_status")
+      .then(status => { if (!cancelled) setCloudSyncStatus(status); })
+      .catch(() => { if (!cancelled) setCloudSyncStatus(null); });
+    return () => { cancelled = true; };
+  }, [authStatus?.authenticated]);
+
+  const connectCloudAndSync = async (event: FormEvent) => {
+    event.preventDefault();
+    setCloudSyncBusy(true);
+    setCloudSyncError("");
+    try {
+      const status = await invoke<CloudSyncStatus>("connect_cloud_and_sync", {
+        apiUrl: cloudApiUrl,
+        supabaseUrl: cloudSupabaseUrl,
+        publicKey: cloudPublicKey,
+        email: cloudEmail,
+        password: cloudPassword
+      });
+      setCloudSyncStatus(status);
+      setCloudPassword("");
+    } catch (error) {
+      setCloudSyncError(String(error));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  };
+
+  const syncCloudProjects = async () => {
+    setCloudSyncBusy(true);
+    setCloudSyncError("");
+    try {
+      const status = await invoke<CloudSyncStatus>("sync_cloud_projects");
+      setCloudSyncStatus(status);
+    } catch (error) {
+      setCloudSyncError(String(error));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  };
 
   const submitOwnerAuth = async (password: string, _confirmation: string) => {
     setAuthBusy(true);
@@ -922,6 +981,45 @@ export default function App() {
               </div>
               <span className="muted">{projects.length} saved {projects.length === 1 ? "project" : "projects"}</span>
             </div>
+            <article className="panel-card cloud-sync-card">
+              <div className="panel-title">
+                <div><span className="eyebrow">CROSS-DEVICE WORKSPACE</span><h3>Connect your phone and Windows app</h3></div>
+                <span className="tag">{cloudSyncStatus?.connected ? "CONNECTED" : "NOT CONNECTED"}</span>
+              </div>
+              <p className="panel-copy">
+                Sign in with the same Supabase account configured in JARVIS Mobile. Your local desktop projects will be copied into the shared cloud workspace.
+              </p>
+              {cloudSyncStatus?.connected ? (
+                <div className="cloud-sync-summary">
+                  <b>{cloudSyncStatus.workspace_name}</b>
+                  <span>{cloudSyncStatus.synced_projects} local projects synced to the shared workspace.</span>
+                  <button type="button" disabled={cloudSyncBusy} onClick={syncCloudProjects}>
+                    <Radio size={15}/>{cloudSyncBusy ? "Syncing…" : "Sync projects now"}
+                  </button>
+                </div>
+              ) : (
+                <form className="project-form" onSubmit={connectCloudAndSync}>
+                  <label htmlFor="cloud-api-url">JARVIS Cloud API HTTPS URL</label>
+                  <input id="cloud-api-url" type="url" required value={cloudApiUrl} onChange={event => setCloudApiUrl(event.target.value)} placeholder="https://your-jarvis-api.example.com"/>
+                  <label htmlFor="cloud-supabase-url">Supabase project HTTPS URL</label>
+                  <input id="cloud-supabase-url" type="url" required value={cloudSupabaseUrl} onChange={event => setCloudSupabaseUrl(event.target.value)} placeholder="https://your-project.supabase.co"/>
+                  <label htmlFor="cloud-public-key">Supabase publishable / anon public key</label>
+                  <input id="cloud-public-key" type="password" required value={cloudPublicKey} onChange={event => setCloudPublicKey(event.target.value)} autoComplete="off"/>
+                  <label htmlFor="cloud-email">Account email</label>
+                  <input id="cloud-email" type="email" required value={cloudEmail} onChange={event => setCloudEmail(event.target.value)} autoComplete="username"/>
+                  <label htmlFor="cloud-password">Account password</label>
+                  <input id="cloud-password" type="password" required value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} autoComplete="current-password"/>
+                  <div className="project-form-footer">
+                    <span>Secrets stay in native process memory, not the webview storage.</span>
+                    <button type="submit" disabled={cloudSyncBusy}>
+                      <ShieldCheck size={15}/>{cloudSyncBusy ? "Connecting…" : "Connect and sync"}
+                    </button>
+                  </div>
+                </form>
+              )}
+              {cloudSyncError && <div className="project-error">{cloudSyncError}</div>}
+              <p className="panel-copy">Use only the Supabase public client key here. Never enter a service-role or secret key. The first connection syncs project records only; tasks and other project history are not yet included.</p>
+            </article>
             <div className="projects-layout">
               <article className="panel-card project-create-card">
                 <div className="panel-title">
