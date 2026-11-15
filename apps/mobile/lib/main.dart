@@ -142,15 +142,15 @@ class _JarvisHomeState extends State<JarvisHome> {
   @override
   Widget build(BuildContext context) {
     if (loading) { return const Scaffold(body: Center(child: CircularProgressIndicator())); }
-    if (!client.isConfigured) return ConfigPage(
+    if (!client.isConfigured) { return ConfigPage(
       error: error, busy: busy,
       onSave: (api,supa,key) => run(() async {
         await client.saveConfiguration(apiUrl: api, supabaseUrl: supa, publicKey: key);
         await client.testCloudApi();
         if (mounted) setState(() {});
       }),
-    );
-    if (!client.isSignedIn) return SignInPage(
+    ); }
+    if (!client.isSignedIn) { return SignInPage(
       error: error, busy: busy,
       onLogin: (email,password) => run(() async {
         await client.signIn(email,password); await afterAuth(); if (mounted) setState(() {});
@@ -164,15 +164,15 @@ class _JarvisHomeState extends State<JarvisHome> {
         }
         if (mounted) setState(() {});
       }),
-    );
-    if (workspace == null) return CreateWorkspacePage(
+    ); }
+    if (workspace == null) { return CreateWorkspacePage(
       error: error, busy: busy,
       onCreate: (name) => run(() async {
         await client.createWorkspace(name); await loadWorkspaces(); await ensureDevice();
         if (mounted) setState(() {});
       }),
       onSignOut: () => run(signOut),
-    );
+    ); }
 
     final counts = overview?['counts'] as Map<String,dynamic>? ?? {};
     final pages = [
