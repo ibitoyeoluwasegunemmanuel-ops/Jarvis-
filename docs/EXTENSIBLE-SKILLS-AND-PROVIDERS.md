@@ -41,6 +41,26 @@ Primary references:
 - APIs.guru: https://github.com/APIs-guru/openapi-directory
 - MCP: https://modelcontextprotocol.io/
 
+## 2A. Additional low-cost provider candidates (verified Nov 15, 2026)
+
+| Need | Candidate | Current free allowance / role | Integration decision |
+|---|---|---|---|
+| Unified LLM adapter and self-hosted gateway | LiteLLM | Open-source interface for 100+ model providers; retries, fallbacks and an OpenAI-compatible proxy. LiteLLM itself does not make upstream inference free. | Use as a provider abstraction candidate; keep JARVIS policy, approvals and secrets outside the proxy. |
+| Free hosted model trials | OpenRouter | Free model variants are available, but are rate-limited. Current free-variant limit shown in its docs: 20 requests/minute and 50/day until the account has purchased qualifying credits. | Add as optional provider, with per-model allowlist, daily budget and fallback to local models. |
+| Multi-provider inference | Hugging Face Inference Providers | Free accounts currently receive $0.10 monthly inference credits (subject to change); paid usage is available. | Useful for testing multiple model vendors through one token; do not treat as unlimited free inference. |
+| AI-focused web search | Tavily | Current Researcher free tier lists 1,000 API credits/month with no credit card required. | Add as an independent search adapter alongside SearXNG; enforce monthly quota. |
+| Search API | Brave Search | Current Search plan includes $5 monthly credits; published price is $5 per 1,000 requests. It is not an unlimited free plan. | Optional independent index for corroboration and structured web/news results. |
+
+Official references:
+- LiteLLM: https://docs.litellm.ai/docs/
+- OpenRouter free models and limits: https://openrouter.ai/collections/free-models/ and https://openrouter.ai/docs/api-reference/limits
+- Hugging Face pricing: https://huggingface.co/docs/inference-providers/pricing
+- Tavily pricing: https://www.tavily.com/pricing
+- Brave Search API: https://brave.com/search/api/
+- SearXNG: https://docs.searxng.org/
+
+**Recommended JARVIS combination:** LiteLLM as an optional model-routing layer; OpenRouter and Hugging Face as hosted model sources; Ollama/local models for private offline-capable inference; SearXNG for self-hosted metasearch; Tavily and Brave as separately configurable research sources. JARVIS must query multiple search providers when appropriate, compare results, retain citations and disclose which sources were actually queried. Never send private project data to external providers unless the owner has enabled that provider for that data class.
+
 ## 3. Provider routing
 
 Implement a provider registry and capability-aware router.
