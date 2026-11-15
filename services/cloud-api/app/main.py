@@ -15,9 +15,9 @@ from typing import Annotated, Literal
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from jwt import PyJWKClient
-from pydantic import BaseModel, Field, field_validator
 from psycopg import connect
 from psycopg.rows import dict_row
+from pydantic import BaseModel, Field, field_validator
 
 app = FastAPI(title="JARVIS Cloud API", version="0.1.0", docs_url=None, redoc_url=None)
 
