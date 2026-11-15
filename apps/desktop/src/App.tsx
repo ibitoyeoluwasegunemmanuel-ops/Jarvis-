@@ -232,6 +232,7 @@ export default function App() {
   const [healthError, setHealthError] = useState(false);
   const [monitoring, setMonitoring] = useState<MonitoringOverview | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
+  const [monitoringRefreshKey, setMonitoringRefreshKey] = useState(0);
   const [monitoringError, setMonitoringError] = useState("");
   const [capabilities, setCapabilities] = useState<GatewayCapabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState(false);
@@ -839,7 +840,7 @@ export default function App() {
       })
       .finally(() => { if (!cancelled) setMonitoringLoading(false); });
     return () => { cancelled = true; };
-  }, [active, authStatus?.authenticated]);
+  }, [active, authStatus?.authenticated, monitoringRefreshKey]);
 
   const nav = [
     { label: "Overview", icon: LayoutDashboard },
@@ -886,7 +887,7 @@ export default function App() {
           <section className="monitoring-workspace">
             <div className="section-heading">
               <div><span className="eyebrow">READ-ONLY CONNECTED SERVICES</span><h2>Monitoring centre</h2></div>
-              <button className="monitor-refresh" onClick={() => setActive("Overview") || setActive("Monitoring")}>Refresh status</button>
+              <button className="monitor-refresh" onClick={() => setMonitoringRefreshKey(value => value + 1)}>Refresh status</button>
             </div>
             <p className="monitor-intro">JARVIS checks connected provider accounts using read-only API access. Tokens stay in the local gateway environment and are never shown here.</p>
             {monitoringLoading && <div className="projects-empty">Checking connected providers…</div>}
