@@ -522,6 +522,34 @@ async fn execute_approved_project_task(
     result
 }
 
+/// Reads configured external provider status through a fixed native gateway route.
+#[tauri::command]
+async fn get_monitoring_overview(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<serde_json::Value, String> {
+    let client = gateway_client()?;
+    let mut owner_token = runtime.owner_session.lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone().ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let response = client.get(gateway_url("/v1/monitoring/providers/overview"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send().await.map_err(|_| "gateway_not_ready".to_string())?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("monitoring_overview_failed_{}", response.status().as_u16()));
+        }
+        response.json::<serde_json::Value>().await
+            .map_err(|_| "monitoring_overview_response_invalid".to_string())
+    }.await;
+    owner_token.zeroize();
+    result
+}
+
 /// Lists projects through the authenticated native bridge. The owner token is
 /// required and is attached in Rust; it is never sent to the webview.
 
@@ -1373,6 +1401,7 @@ pub fn run() {
             update_project_risk_status,
             list_project_memory,
             create_project_memory,
+            get_monitoring_overview,
             list_project_approvals,
             create_project_approval,
             decide_project_approval,
