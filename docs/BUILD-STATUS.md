@@ -35,7 +35,7 @@ JARVIS is a private, local-first Windows desktop foundation with a native Tauri 
 ### Not implemented yet
 
 - Trusted cloud identity/workspace membership, PostgreSQL connection, production RLS, cloud sync, or multi-user support.
-- The native Tauri bridge does not yet call `/v1/execution/approved`; nonce handoff from the Rust vault to this route and a deliberate desktop Execute control remain to be implemented and tested. The route is therefore not yet an end-to-end desktop workflow.
+- The native Tauri bridge calls `/v1/execution/approved` through a fixed typed command. The approval nonce is retrieved from Rust-managed memory and is never exposed to React. The Projects UI offers an explicit Execute control for approved `project.task.create` requests, then refreshes tasks, approvals and activity. This is a narrow owner-initiated workflow, not general agent or computer execution.
 - Agent orchestration, model-provider connection, trusted agent identity/scope issuance, and specialist execution. No autonomous agent execution is implemented.
 - Realtime voice, Nigerian-English speech evaluation, avatar rendering, screen/camera sharing.
 - Local computer operator, browser/file tools, and external integrations.
@@ -58,7 +58,7 @@ The gateway process token is a transport gate, not owner identity. Owner account
 
 1. Connect the fixed native Tauri execution command to `/v1/execution/approved`, retrieving the nonce only from the Rust vault; never expose it to React. Add an explicit desktop Execute action and integration tests.
 2. Bind approvals to trusted actor/workspace/target as well as exact action, canonical arguments, expiry, and nonce; reject replay or changed arguments; append audit events. Approval is not execution.
-3. Build orchestrator and specialist execution behind the shared policy and approval boundary.
-4. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
-5. Add voice, avatar, browser automation, and computer-use capabilities behind explicit permissions and tests.
-6. Validate the installer on a physical Windows device and establish code signing before broad distribution.
+3. Build the extensible provider registry, search federation, skill lifecycle and source-linked knowledge ingestion behind the shared policy and approval boundary.\n4. Build orchestrator and specialist execution behind the shared policy and approval boundary.
+5. Establish trusted workspace identity and database access boundaries before cloud sync or multi-user support.
+6. Add voice, avatar, browser automation, and computer-use capabilities behind explicit permissions and tests.
+7. Build mobile/web clients and shared cloud brain; then validate installers on physical devices and establish code signing before broad distribution.
