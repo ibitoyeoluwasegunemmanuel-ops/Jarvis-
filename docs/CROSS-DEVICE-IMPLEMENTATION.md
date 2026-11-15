@@ -1,6 +1,6 @@
 # JARVIS — Cross-Device and Backend Implementation Plan
 
-Status: implementation plan for the next delivery slice
+Status: implementation in progress — cloud API foundation and Flutter client scaffold are in the branch
 Branch: feature/cross-device-foundation
 
 ## Product decision
