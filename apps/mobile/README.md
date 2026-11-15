@@ -10,6 +10,7 @@ This is the installable Android/iOS companion application.
 ## Run
 ```sh
 cd apps/mobile
+flutter create --project-name jarvis_mobile --org com.ceoglobal --platforms android,ios --no-pub .
 flutter pub get
 flutter run
 ```
