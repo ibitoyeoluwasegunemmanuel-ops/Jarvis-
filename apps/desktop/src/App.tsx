@@ -479,6 +479,17 @@ export default function App() {
     };
   }, [authStatus?.authenticated]);
 
+  const syncCloudQuietly = async () => {
+    if (!cloudSyncStatus?.connected) return;
+    try {
+      const status = await invoke<CloudSyncStatus>("sync_cloud_projects");
+      setCloudSyncStatus(status);
+      setCloudSyncError("");
+    } catch (error) {
+      setCloudSyncError(`Saved locally, but cloud sync needs attention: ${String(error)}`);
+    }
+  };
+
   const changeProjectStatus = async (projectId: string, status: Project["status"]) => {
     setUpdatingProjectId(projectId);
     setProjectError("");
@@ -488,6 +499,7 @@ export default function App() {
         status
       });
       setProjects(current => current.map(item => item.id === updated.id ? updated : item));
+      await syncCloudQuietly();
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
@@ -517,6 +529,7 @@ export default function App() {
         description: projectDescription.trim()
       });
       setProjects(current => [project, ...current.filter(item => item.id !== project.id)]);
+      await syncCloudQuietly();
       setProjectName("");
       setProjectDescription("");
     } catch (error) {
