@@ -104,7 +104,7 @@ CREATE POLICY device_owner_all ON jarvis.devices
         user_id = jarvis.current_user_id()
         AND EXISTS (
             SELECT 1 FROM jarvis.workspace_members wm
-            WHERE wm.workspace_id = monitoring_alerts.workspace_id
+            WHERE wm.workspace_id = devices.workspace_id
               AND wm.user_id = jarvis.current_user_id()
         )
     );
@@ -113,7 +113,7 @@ CREATE POLICY project_member_read ON jarvis.projects
     FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM jarvis.workspace_members wm
-            WHERE wm.workspace_id = workspace_id
+            WHERE wm.workspace_id = projects.workspace_id
               AND wm.user_id = jarvis.current_user_id()
         )
     );
@@ -122,7 +122,7 @@ CREATE POLICY alert_member_read ON jarvis.monitoring_alerts
     FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM jarvis.workspace_members wm
-            WHERE wm.workspace_id = workspace_id
+            WHERE wm.workspace_id = monitoring_alerts.workspace_id
               AND wm.user_id = jarvis.current_user_id()
         )
     );
