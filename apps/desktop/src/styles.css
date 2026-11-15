@@ -185,3 +185,13 @@
 .monitor-item b{font-size:10px;color:#e2e5f2;overflow-wrap:anywhere}
 .monitor-item span{font:8px 'DM Mono',monospace;color:#858da3;text-align:right}
 @media(max-width:760px){.monitor-provider-grid{grid-template-columns:1fr}.monitor-item{flex-direction:column;gap:5px}.monitor-item span{text-align:left}}
+
+
+/* Shared cloud workspace connection */
+.cloud-sync-card{margin-bottom:14px}
+.cloud-sync-card .project-form{max-width:760px}
+.cloud-sync-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0}
+.cloud-sync-summary b{font-size:12px;color:#e5e9f5}
+.cloud-sync-summary span{font-size:10px;color:#8e98ae;flex:1}
+.cloud-sync-summary button{display:inline-flex;align-items:center;gap:7px;border:1px solid #9b87f044;border-radius:7px;background:#8a75e615;color:#c7bcff;padding:9px 13px;font-size:10px;cursor:pointer}
+.cloud-sync-summary button:disabled{opacity:.55;cursor:wait}
