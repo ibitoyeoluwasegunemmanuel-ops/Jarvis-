@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 
 type Health = { status: string; service?: string; version?: string };
+type MonitoringProvider = {
+  provider: string; status: "connected" | "not_configured" | "unavailable";
+  detail?: string; deployments?: Array<{ id: string; name: string; url: string; state: string; created_at?: number; target: string }>;
+  projects?: Array<{ ref: string; name: string; region: string; status: string; created_at: string }>;
+};
+type MonitoringOverview = { read_only: boolean; providers: MonitoringProvider[] };
 type GatewayCapabilities = {
   capabilities: {
     gateway_session_authentication: boolean;
@@ -224,6 +230,9 @@ function AuthScreen({
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
+  const [monitoring, setMonitoring] = useState<MonitoringOverview | null>(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
+  const [monitoringError, setMonitoringError] = useState("");
   const [capabilities, setCapabilities] = useState<GatewayCapabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState(false);
   const [authStatus, setAuthStatus] = useState<OwnerAuthStatus | null>(null);
@@ -814,13 +823,32 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (active !== "Monitoring" || !authStatus?.authenticated) return;
+    let cancelled = false;
+    setMonitoringLoading(true);
+    setMonitoringError("");
+    invoke<MonitoringOverview>("get_monitoring_overview")
+      .then(result => { if (!cancelled) setMonitoring(result); })
+      .catch(error => {
+        if (cancelled) return;
+        if (String(error).includes("owner_session_expired")) {
+          setAuthStatus(current => current ? { ...current, authenticated: false } : current);
+        }
+        setMonitoringError("JARVIS could not retrieve provider status. Check the local gateway and owner session.");
+      })
+      .finally(() => { if (!cancelled) setMonitoringLoading(false); });
+    return () => { cancelled = true; };
+  }, [active, authStatus?.authenticated]);
+
   const nav = [
     { label: "Overview", icon: LayoutDashboard },
     { label: "Projects", icon: FolderKanban },
     { label: "AI Workspace", icon: BrainCircuit },
     { label: "Engineering", icon: TerminalSquare },
     { label: "Security", icon: ShieldCheck },
-    { label: "Analytics", icon: Activity }
+    { label: "Analytics", icon: Activity },
+    { label: "Monitoring", icon: Radio }
   ];
 
   if (!authStatus || !authStatus.authenticated) {
@@ -854,7 +882,37 @@ export default function App() {
       <div className="content">
         {authError && <div className="dashboard-error">{authError}</div>}
         <div className="welcome-row"><div><div className="eyebrow"><span className="pulse"/> SYSTEM INITIALISING</div><h1>Your workspace.<br/><em>One intelligent system.</em></h1><p className="lead">A unified environment for building, analysing, researching and operating your projects.</p></div><div className="presence-card"><div className="presence-orb"><AudioLines size={27}/></div><div><b>JARVIS presence</b><span>Voice interface is being prepared</span></div><span className="coming">IN DEVELOPMENT</span></div></div>
-        {active === "Projects" ? (
+        {active === "Monitoring" ? (
+          <section className="monitoring-workspace">
+            <div className="section-heading">
+              <div><span className="eyebrow">READ-ONLY CONNECTED SERVICES</span><h2>Monitoring centre</h2></div>
+              <button className="monitor-refresh" onClick={() => setActive("Overview") || setActive("Monitoring")}>Refresh status</button>
+            </div>
+            <p className="monitor-intro">JARVIS checks connected provider accounts using read-only API access. Tokens stay in the local gateway environment and are never shown here.</p>
+            {monitoringLoading && <div className="projects-empty">Checking connected providers…</div>}
+            {monitoringError && <div className="project-error">{monitoringError}</div>}
+            <div className="monitor-provider-grid">
+              {(monitoring?.providers ?? [
+                { provider: "vercel", status: "not_configured" as const },
+                { provider: "supabase", status: "not_configured" as const }
+              ]).map(provider => (
+                <article className="panel-card monitor-provider" key={provider.provider}>
+                  <div className="panel-title"><div><span className="eyebrow">PROVIDER</span><h3>{provider.provider === "vercel" ? "Vercel" : "Supabase"}</h3></div><span className={`monitor-state ${provider.status}`}>{provider.status.replace("_", " ")}</span></div>
+                  {provider.provider === "vercel" ? (
+                    <div className="monitor-items">
+                      {(provider.deployments ?? []).length ? provider.deployments!.map(item => <div className="monitor-item" key={item.id}><b>{item.name || item.url || "Deployment"}</b><span>{item.state} · {item.target || "environment not specified"}</span></div>) : <p className="muted">{provider.status === "not_configured" ? "Add a read-only VERCEL_TOKEN to the local gateway to inspect deployments." : provider.detail || "No deployments returned."}</p>}
+                    </div>
+                  ) : (
+                    <div className="monitor-items">
+                      {(provider.projects ?? []).length ? provider.projects!.map(item => <div className="monitor-item" key={item.ref}><b>{item.name}</b><span>{item.status} · {item.region}</span></div>) : <p className="muted">{provider.status === "not_configured" ? "Add a scoped read-only SUPABASE_ACCESS_TOKEN to inspect projects." : provider.detail || "No projects returned."}</p>}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+            <div className="projects-note"><ShieldCheck size={14}/> Read-only overview only. JARVIS cannot deploy, change database settings or modify projects through this monitoring screen.</div>
+          </section>
+        ) : active === "Projects" ? (
           <section className="projects-workspace">
             <div className="section-heading">
               <div>
