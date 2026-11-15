@@ -139,11 +139,16 @@ class JarvisClient {
   Future<void> _refreshSession() async {
     final refresh = _refreshToken;
     if (refresh == null) throw const JarvisException('Please sign in again.');
-    final response = await _authPost(
-      '/auth/v1/token?grant_type=refresh_token',
-      {'refresh_token': refresh},
-    );
-    await _acceptSession(response);
+    try {
+      final response = await _authPost(
+        '/auth/v1/token?grant_type=refresh_token',
+        {'refresh_token': refresh},
+      );
+      await _acceptSession(response);
+    } catch (_) {
+      await _clearLocalSession();
+      rethrow;
+    }
   }
 
   Future<String> _validToken() async {
@@ -258,6 +263,15 @@ class JarvisClient {
     await delete('/v1/devices/$deviceId');
   }
 
+  Future<void> _clearLocalSession() async {
+    _accessToken = null;
+    _refreshToken = null;
+    _expiresAt = 0;
+    await _storage.delete(key: 'jarvis_access_token');
+    await _storage.delete(key: 'jarvis_refresh_token');
+    await _storage.delete(key: 'jarvis_token_expires_at');
+  }
+
   Future<void> signOut() async {
     final token = _accessToken;
     if (token != null && _supabaseUrl.isNotEmpty) {
@@ -273,12 +287,7 @@ class JarvisClient {
         // Local credential deletion must still happen when offline.
       }
     }
-    _accessToken = null;
-    _refreshToken = null;
-    _expiresAt = 0;
-    await _storage.delete(key: 'jarvis_access_token');
-    await _storage.delete(key: 'jarvis_refresh_token');
-    await _storage.delete(key: 'jarvis_token_expires_at');
+    await _clearLocalSession();
   }
 
   Map<String, dynamic> _decode(String body) {
