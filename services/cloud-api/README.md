@@ -10,7 +10,8 @@ loopback-only and must never be exposed to a phone, LAN, tunnel, or public IP.
 - Derives user identity from the verified token subject; no caller-supplied owner ID.
 - Uses a transaction-local PostgreSQL identity for RLS checks.
 - Supports owner workspace bootstrap, device registration/list/revocation, and authenticated device heartbeat timestamps.
-- Provides workspace-scoped read access to projects and monitoring alerts.
+- Provides workspace-scoped project and alert reads, plus idempotent desktop project sync keyed by local project ID.
+- Records mobile device heartbeats and supports per-user device revocation.
 - Exposes only a non-sensitive liveness endpoint without authentication.
 
 The Flutter mobile source now includes Supabase Auth email/password sign-in,
