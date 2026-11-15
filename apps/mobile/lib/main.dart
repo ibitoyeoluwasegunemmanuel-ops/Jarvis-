@@ -1,320 +1,437 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
+import 'services/jarvis_client.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const JarvisMobileApp());
 }
 
-const _ink = Color(0xFF0B1020);
-const _panel = Color(0xFF151D32);
-const _muted = Color(0xFF9AA8C4);
-const _accent = Color(0xFF8B7CFF);
+const ink = Color(0xFF0B1020);
+const panel = Color(0xFF151D32);
+const muted = Color(0xFF9AA8C4);
+const accent = Color(0xFF8B7CFF);
 
 class JarvisMobileApp extends StatelessWidget {
   const JarvisMobileApp({super.key});
-
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'JARVIS',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: _ink,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: _accent,
-            brightness: Brightness.dark,
-            surface: _panel,
-          ),
-          useMaterial3: true,
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: _panel,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        home: const MobileHome(),
-      );
+    title: 'JARVIS', debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      brightness: Brightness.dark, scaffoldBackgroundColor: ink,
+      colorScheme: ColorScheme.fromSeed(seedColor: accent, brightness: Brightness.dark),
+      useMaterial3: true,
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true, fillColor: panel,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      ),
+    ),
+    home: const JarvisHome(),
+  );
 }
 
-class MobileHome extends StatefulWidget {
-  const MobileHome({super.key});
-
+class JarvisHome extends StatefulWidget {
+  const JarvisHome({super.key});
   @override
-  State<MobileHome> createState() => _MobileHomeState();
+  State<JarvisHome> createState() => _JarvisHomeState();
 }
 
-class _MobileHomeState extends State<MobileHome> {
-  static const _storage = FlutterSecureStorage();
-  final _urlController = TextEditingController();
-  int _tab = 0;
-  bool _checking = false;
-  String _apiUrl = '';
-  String _connection = 'Not connected';
-  String _detail = 'Connect this phone to your secure JARVIS cloud workspace.';
-  String? _error;
+class _JarvisHomeState extends State<JarvisHome> {
+  final client = JarvisClient();
+  static const storage = FlutterSecureStorage();
+  bool loading = true, busy = false;
+  String? error;
+  List<dynamic> workspaces = [], projects = [], alerts = [], devices = [];
+  Map<String,dynamic>? workspace, overview;
+  int tab = 0;
+  String get workspaceId => workspace?['id']?.toString() ?? '';
 
   @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
+  void initState() { super.initState(); init(); }
 
-  Future<void> _loadSettings() async {
+  Future<void> init() async {
     try {
-      final saved = await _storage.read(key: 'jarvis_api_base_url');
-      if (!mounted) return;
-      setState(() {
-        _apiUrl = saved ?? '';
-        _urlController.text = _apiUrl;
-        if (_apiUrl.isNotEmpty) {
-          _detail = 'Server address saved. Check the connection to continue.';
-        }
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _connection = 'Secure storage unavailable';
-        _detail = 'This build could not access platform secure storage. Use a real Android or iOS device build.';
-      });
-    }
+      await client.load();
+      if (client.isConfigured && client.isSignedIn) await loadWorkspaces();
+    } catch (e) { error = e.toString(); }
+    if (mounted) setState(() => loading = false);
   }
 
-  Future<void> _saveAndCheck() async {
-    final raw = _urlController.text.trim();
-    final uri = Uri.tryParse(raw);
-    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
-      setState(() => _error = 'Enter your secure HTTPS JARVIS server address.');
-      return;
-    }
-    setState(() {
-      _checking = true;
-      _error = null;
-      _connection = 'Checking connection';
-      _detail = 'Checking the configured cloud service…';
-    });
-    try {
-      final base = raw.replaceFirst(RegExp(r'/+$'), '');
-      final response = await http
-          .get(Uri.parse('$base/health'))
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Server returned HTTP ${response.statusCode}.');
-      }
-      await _storage.write(key: 'jarvis_api_base_url', value: base);
-      if (!mounted) return;
-      setState(() {
-        _apiUrl = base;
-        _connection = 'Server reachable';
-        _detail = 'The cloud endpoint responded. Secure account sign-in will be enabled when cloud identity is deployed.';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _connection = 'Connection unavailable';
-        _detail = 'Could not reach this HTTPS server. Check the address and try again.';
-        _error = e.toString().replaceFirst('Exception: ', '');
-      });
-    } finally {
-      if (mounted) setState(() => _checking = false);
-    }
+  Future<void> loadWorkspaces({String? selectId}) async {
+    workspaces = await client.workspaces();
+    if (workspaces.isEmpty) { workspace = null; return; }
+    final wanted = selectId ?? workspaceId;
+    workspace = workspaces.cast<Map<String,dynamic>>().firstWhere(
+      (w) => w['id'].toString() == wanted,
+      orElse: () => workspaces.first as Map<String,dynamic>,
+    );
+    await refreshData();
   }
 
-  Future<void> _disconnect() async {
-    await _storage.delete(key: 'jarvis_api_base_url');
-    if (!mounted) return;
-    setState(() {
-      _apiUrl = '';
-      _urlController.clear();
-      _connection = 'Not connected';
-      _detail = 'This device has been disconnected from its saved server address.';
-      _error = null;
-    });
+  Future<void> refreshData() async {
+    if (workspaceId.isEmpty) return;
+    final id = workspaceId;
+    final values = await Future.wait([
+      client.overview(id), client.projects(id), client.alerts(id), client.devices(id),
+    ]);
+    overview = values[0] as Map<String,dynamic>;
+    projects = values[1] as List<dynamic>;
+    alerts = values[2] as List<dynamic>;
+    devices = values[3] as List<dynamic>;
+  }
+
+  Future<void> run(Future<void> Function() action) async {
+    setState(() { busy = true; error = null; });
+    try { await action(); }
+    catch (e) { error = e.toString(); }
+    if (mounted) setState(() => busy = false);
+  }
+
+  Future<void> afterAuth() async {
+    await loadWorkspaces();
+    if (workspace != null) await ensureDevice();
+  }
+
+  Future<void> ensureDevice() async {
+    if (workspaceId.isEmpty) return;
+    final existing = await storage.read(key: 'jarvis_registered_device_id');
+    if (existing != null && existing.isNotEmpty) return;
+    final platform = switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'android',
+      TargetPlatform.iOS => 'ios',
+      _ => 'web',
+    };
+    final device = await client.registerDevice(
+      workspaceId: workspaceId,
+      deviceName: platform == 'ios' ? 'iPhone' : platform == 'android' ? 'Android phone' : 'Mobile device',
+      platform: platform,
+    );
+    await storage.write(key: 'jarvis_registered_device_id', value: device['id'].toString());
+    await refreshData();
+  }
+
+  Future<void> signOut() async {
+    await client.signOut();
+    await storage.delete(key: 'jarvis_registered_device_id');
+    workspaces = []; workspace = null; projects = []; alerts = []; devices = []; overview = null;
   }
 
   @override
-  void dispose() {
-    _urlController.dispose();
-    super.dispose();
-  }
+  void dispose() { client.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
+    if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (!client.isConfigured) return ConfigPage(
+      error: error, busy: busy,
+      onSave: (api,supa,key) => run(() async {
+        await client.saveConfiguration(apiUrl: api, supabaseUrl: supa, publicKey: key);
+        await client.testCloudApi();
+        if (mounted) setState(() {});
+      }),
+    );
+    if (!client.isSignedIn) return SignInPage(
+      error: error, busy: busy,
+      onLogin: (email,password) => run(() async {
+        await client.signIn(email,password); await afterAuth(); if (mounted) setState(() {});
+      }),
+      onSignup: (email,password) => run(() async {
+        final signedIn = await client.signUp(email,password);
+        if (signedIn) { await afterAuth(); }
+        else { error = 'Account created. Confirm your email, then sign in.'; }
+        if (mounted) setState(() {});
+      }),
+    );
+    if (workspace == null) return CreateWorkspacePage(
+      error: error, busy: busy,
+      onCreate: (name) => run(() async {
+        await client.createWorkspace(name); await loadWorkspaces(); await ensureDevice();
+        if (mounted) setState(() {});
+      }),
+      onSignOut: () => run(signOut),
+    );
+
+    final counts = overview?['counts'] as Map<String,dynamic>? ?? {};
     final pages = [
-      _overview(),
-      _workspace(),
-      _deviceSettings(),
+      ListView(padding: const EdgeInsets.all(20), children: [
+        const Text('YOUR AI, ACROSS DEVICES', style: TextStyle(color: accent, letterSpacing: 1.5, fontSize: 11, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        const Text('Good to have you\nhere.', style: TextStyle(fontSize: 32, height: 1.1, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(workspace?['name']?.toString() ?? 'JARVIS Workspace', style: const TextStyle(color: muted)),
+        const SizedBox(height: 20),
+        if (error != null) ErrorLine(error!),
+        Row(children: [
+          Expanded(child: Metric('Projects', '${counts['projects'] ?? projects.length}', Icons.folder_outlined)),
+          const SizedBox(width: 10),
+          Expanded(child: Metric('Open alerts', '${counts['open_alerts'] ?? alerts.length}', Icons.notifications_outlined)),
+        ]),
+        const SizedBox(height: 10),
+        Metric('Connected devices', '${counts['active_devices'] ?? devices.length}', Icons.devices),
+        const SizedBox(height: 24),
+        SectionHeader('RECENT PROJECTS', onRefresh: () => run(refreshData)),
+        if (projects.isEmpty) const EmptyLine('No projects have been added to this cloud workspace yet.')
+        else ...projects.take(8).map((p) => DataLine(
+          title: p['name']?.toString() ?? 'Project',
+          subtitle: p['description']?.toString() ?? '',
+          trailing: p['status']?.toString(),
+          icon: Icons.folder_open,
+        )),
+        const SizedBox(height: 18),
+        const SectionHeader('MONITORING ALERTS'),
+        if (alerts.isEmpty) const EmptyLine('No monitoring alerts are recorded for this workspace.')
+        else ...alerts.take(8).map((a) => DataLine(
+          title: a['title']?.toString() ?? 'Alert',
+          subtitle: a['summary']?.toString() ?? '',
+          trailing: a['severity']?.toString(),
+          icon: Icons.monitor_heart_outlined,
+        )),
+      ]),
+      ListView(padding: const EdgeInsets.all(20), children: [
+        const Text('WORKSPACE', style: TextStyle(color: accent, letterSpacing: 1.5, fontSize: 11, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        const Text('Your work, in your pocket.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: workspaceId,
+          decoration: const InputDecoration(labelText: 'Active workspace'),
+          items: workspaces.map((w) => DropdownMenuItem<String>(
+            value: w['id'].toString(), child: Text(w['name']?.toString() ?? 'Workspace'),
+          )).toList(),
+          onChanged: (id) { if (id != null) run(() => loadWorkspaces(selectId: id)); },
+        ),
+        const SizedBox(height: 20),
+        const SectionHeader('PROJECTS'),
+        if (projects.isEmpty) const EmptyLine('Projects saved to your cloud workspace will appear here.')
+        else ...projects.map((p) => DataLine(
+          title: p['name']?.toString() ?? 'Project',
+          subtitle: p['description']?.toString() ?? '',
+          trailing: p['status']?.toString(),
+          icon: Icons.folder_open,
+        )),
+        const SizedBox(height: 16),
+        const SectionHeader('ALERTS'),
+        if (alerts.isEmpty) const EmptyLine('No alerts have been recorded.')
+        else ...alerts.map((a) => DataLine(
+          title: a['title']?.toString() ?? 'Alert',
+          subtitle: a['summary']?.toString() ?? '',
+          trailing: a['status']?.toString(),
+          icon: Icons.notifications_active_outlined,
+        )),
+      ]),
+      ListView(padding: const EdgeInsets.all(20), children: [
+        const Text('YOUR DEVICES', style: TextStyle(color: accent, letterSpacing: 1.5, fontSize: 11, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        const Text('One JARVIS. All your devices.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        const Text('Review devices connected to this workspace. You can revoke a device if you no longer trust it.', style: TextStyle(color: muted, height: 1.5)),
+        const SizedBox(height: 16),
+        SectionHeader('REGISTERED DEVICES', onRefresh: () => run(refreshData)),
+        if (devices.isEmpty) const EmptyLine('No active devices were returned by the cloud service.')
+        else ...devices.map((d) => Card(
+          color: panel,
+          child: ListTile(
+            leading: const Icon(Icons.devices, color: accent),
+            title: Text(d['device_name']?.toString() ?? 'Device'),
+            subtitle: Text('${d['platform'] ?? ''} • ${d['app_version'] ?? ''}'),
+            trailing: IconButton(
+              icon: const Icon(Icons.block, color: Colors.orangeAccent),
+              tooltip: 'Revoke device',
+              onPressed: () => run(() async {
+                await client.revokeDevice(d['id'].toString());
+                final local = await storage.read(key: 'jarvis_registered_device_id');
+                if (local == d['id'].toString()) await storage.delete(key: 'jarvis_registered_device_id');
+                await refreshData();
+              }),
+            ),
+          ),
+        )),
+        const SizedBox(height: 24),
+        OutlinedButton.icon(onPressed: () => run(signOut), icon: const Icon(Icons.logout), label: const Text('Sign out')),
+      ]),
     ];
+
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _ink,
-        titleSpacing: 20,
-        title: const Row(
-          children: [
-            Icon(Icons.auto_awesome, color: _accent),
-            SizedBox(width: 10),
-            Text('JARVIS', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 2)),
-            SizedBox(width: 9),
-            Text('MOBILE', style: TextStyle(color: _muted, fontSize: 10, letterSpacing: 1.5)),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 18),
-            child: Icon(Icons.circle, size: 9,
-                color: _connection == 'Server reachable' ? Colors.greenAccent : Colors.orangeAccent),
-          ),
-        ],
+        title: const Row(children: [
+          Icon(Icons.auto_awesome, color: accent), SizedBox(width: 10),
+          Text('JARVIS', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 2)),
+          SizedBox(width: 8),
+          Text('MOBILE', style: TextStyle(color: muted, fontSize: 10)),
+        ]),
+        actions: [if (busy) const Padding(
+          padding: EdgeInsets.all(16), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+        ) else IconButton(onPressed: () => run(refreshData), icon: const Icon(Icons.refresh))],
       ),
-      body: SafeArea(child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
-        child: pages[_tab],
-      )),
+      body: SafeArea(child: pages[tab]),
       bottomNavigationBar: NavigationBar(
-        backgroundColor: _panel,
-        selectedIndex: _tab,
-        onDestinationSelected: (value) => setState(() => _tab = value),
+        backgroundColor: panel, selectedIndex: tab,
+        onDestinationSelected: (i) => setState(() => tab = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.grid_view), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.work_outline), label: 'Workspace'),
-          NavigationDestination(icon: Icon(Icons.devices_other), label: 'Devices'),
+          NavigationDestination(icon: Icon(Icons.devices), label: 'Devices'),
         ],
       ),
     );
   }
+}
 
-  Widget _overview() => ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        children: [
-          const Text('YOUR AI, ACROSS DEVICES', style: TextStyle(color: _accent, fontSize: 11, letterSpacing: 1.8, fontWeight: FontWeight.w700)),
+class ConfigPage extends StatefulWidget {
+  const ConfigPage({super.key, this.error, required this.busy, required this.onSave});
+  final String? error; final bool busy;
+  final Future<void> Function(String,String,String) onSave;
+  @override State<ConfigPage> createState() => _ConfigPageState();
+}
+class _ConfigPageState extends State<ConfigPage> {
+  final api = TextEditingController(), supa = TextEditingController(), key = TextEditingController();
+  @override void dispose() { api.dispose(); supa.dispose(); key.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => AuthLayout(
+    eyebrow: 'ONE ACCOUNT. ALL YOUR DEVICES.',
+    title: 'Connect JARVIS',
+    subtitle: 'Enter the cloud API and Supabase project details. They will be stored securely on this phone.',
+    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      TextField(controller: api, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'JARVIS cloud API HTTPS URL')),
+      const SizedBox(height: 12),
+      TextField(controller: supa, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Supabase project HTTPS URL')),
+      const SizedBox(height: 12),
+      TextField(controller: key, obscureText: true, decoration: const InputDecoration(labelText: 'Supabase publishable / anon public key')),
+      const SizedBox(height: 14),
+      if (widget.error != null) ErrorLine(widget.error!),
+      FilledButton(onPressed: widget.busy ? null : () => widget.onSave(api.text,supa.text,key.text), child: Text(widget.busy ? 'Connecting…' : 'Save and test cloud API')),
+      const SizedBox(height: 12),
+      const Text('Never enter a Supabase service-role key in a mobile app.', style: TextStyle(color: muted, fontSize: 12)),
+    ]),
+  );
+}
+
+class SignInPage extends StatefulWidget {
+  const SignInPage({super.key, this.error, required this.busy, required this.onLogin, required this.onSignup});
+  final String? error; final bool busy;
+  final Future<void> Function(String,String) onLogin, onSignup;
+  @override State<SignInPage> createState() => _SignInPageState();
+}
+class _SignInPageState extends State<SignInPage> {
+  final email = TextEditingController(), password = TextEditingController();
+  bool create = false;
+  @override void dispose() { email.dispose(); password.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => AuthLayout(
+    eyebrow: 'YOUR PERSONAL AI OPERATING SYSTEM',
+    title: create ? 'Create your account.' : 'Welcome back.',
+    subtitle: 'Sign in to open the same JARVIS workspace from your phone and Windows computer.',
+    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email address')),
+      const SizedBox(height: 12),
+      TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'Password')),
+      const SizedBox(height: 14),
+      if (widget.error != null) ErrorLine(widget.error!),
+      FilledButton(
+        onPressed: widget.busy ? null : () => create ? widget.onSignup(email.text,password.text) : widget.onLogin(email.text,password.text),
+        child: Text(widget.busy ? 'Please wait…' : create ? 'Create account' : 'Sign in securely'),
+      ),
+      TextButton(onPressed: widget.busy ? null : () => setState(() => create = !create),
+        child: Text(create ? 'Already have an account? Sign in' : 'New to JARVIS? Create an account')),
+    ]),
+  );
+}
+
+class CreateWorkspacePage extends StatefulWidget {
+  const CreateWorkspacePage({super.key, this.error, required this.busy, required this.onCreate, required this.onSignOut});
+  final String? error; final bool busy;
+  final Future<void> Function(String) onCreate;
+  final Future<void> Function() onSignOut;
+  @override State<CreateWorkspacePage> createState() => _CreateWorkspacePageState();
+}
+class _CreateWorkspacePageState extends State<CreateWorkspacePage> {
+  final name = TextEditingController(text: 'My JARVIS Workspace');
+  @override void dispose() { name.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => AuthLayout(
+    eyebrow: 'YOUR PRIVATE WORKSPACE',
+    title: 'Set up your JARVIS.',
+    subtitle: 'Create the shared workspace that your Windows desktop and mobile devices will use.',
+    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      TextField(controller: name, decoration: const InputDecoration(labelText: 'Workspace name')),
+      const SizedBox(height: 14),
+      if (widget.error != null) ErrorLine(widget.error!),
+      FilledButton(onPressed: widget.busy ? null : () => widget.onCreate(name.text), child: Text(widget.busy ? 'Creating…' : 'Create workspace')),
+      TextButton(onPressed: widget.busy ? null : widget.onSignOut, child: const Text('Sign out')),
+    ]),
+  );
+}
+
+class AuthLayout extends StatelessWidget {
+  const AuthLayout({super.key, required this.eyebrow, required this.title, required this.subtitle, required this.child});
+  final String eyebrow,title,subtitle; final Widget child;
+  @override Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(child: Center(child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 460), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Icon(Icons.auto_awesome, color: accent, size: 42),
+          const SizedBox(height: 28),
+          Text(eyebrow, style: const TextStyle(color: accent, fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Text(title, style: const TextStyle(fontSize: 32, height: 1.12, fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
-          const Text('Good to have you\nhere.', style: TextStyle(fontSize: 32, height: 1.12, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          const Text('Your JARVIS companion for staying connected to your work, projects and systems.', style: TextStyle(color: _muted, height: 1.5)),
-          const SizedBox(height: 24),
-          _statusCard(),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(child: _metric(Icons.folder_copy_outlined, 'Projects', 'Cloud sync pending')),
-            const SizedBox(width: 12),
-            Expanded(child: _metric(Icons.notifications_none, 'Alerts', 'Not configured')),
-          ]),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _metric(Icons.mic_none, 'Voice', 'Coming next')),
-            const SizedBox(width: 12),
-            Expanded(child: _metric(Icons.verified_user_outlined, 'Approvals', 'Secure API pending')),
-          ]),
-          const SizedBox(height: 22),
-          _sectionTitle('WHAT THIS PHONE WILL DO'),
-          const SizedBox(height: 12),
-          _feature(Icons.chat_bubble_outline, 'Talk to JARVIS', 'Voice and text conversations that follow you between devices.'),
-          _feature(Icons.monitor_heart_outlined, 'Monitor your systems', 'Receive service and project alerts even when your PC is off.'),
-          _feature(Icons.task_alt, 'Stay on top of work', 'Review projects, tasks and approvals from anywhere.'),
+          Text(subtitle, style: const TextStyle(color: muted, height: 1.5)),
+          const SizedBox(height: 26),
+          child,
         ],
-      );
+      )),
+    ))),
+  );
+}
 
-  Widget _statusCard() => Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          gradient: const LinearGradient(colors: [Color(0xFF25254C), Color(0xFF18243A)]),
-          border: Border.all(color: _accent.withValues(alpha: .28)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.hub_outlined, color: _accent),
-            const SizedBox(width: 9),
-            const Expanded(child: Text('CLOUD CONNECTION', style: TextStyle(fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w700))),
-            Text(_connection, style: const TextStyle(color: _muted, fontSize: 11)),
-          ]),
-          const SizedBox(height: 13),
-          Text(_detail, style: const TextStyle(color: Colors.white, height: 1.45)),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
-          ],
-          const SizedBox(height: 14),
-          SizedBox(width: double.infinity, child: FilledButton(
-            onPressed: () => setState(() => _tab = 2),
-            child: const Text('Configure connection'),
-          )),
-        ]),
-      );
+class Metric extends StatelessWidget {
+  const Metric(this.title,this.value,this.icon,{super.key});
+  final String title,value; final IconData icon;
+  @override Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(color: panel,borderRadius: BorderRadius.circular(17)),
+    child: Row(children: [
+      Icon(icon,color: accent), const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,children: [
+        Text(title,style: const TextStyle(color: muted,fontSize: 11)),
+        const SizedBox(height: 4), Text(value,style: const TextStyle(fontSize: 22,fontWeight: FontWeight.w800)),
+      ])),
+    ]),
+  );
+}
 
-  Widget _metric(IconData icon, String title, String value) => Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(color: _panel, borderRadius: BorderRadius.circular(17)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(icon, color: _accent),
-          const SizedBox(height: 14),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(color: _muted, fontSize: 11)),
-        ]),
-      );
+class SectionHeader extends StatelessWidget {
+  const SectionHeader(this.title,{super.key,this.onRefresh});
+  final String title; final Future<void> Function()? onRefresh;
+  @override Widget build(BuildContext context) => Row(children: [
+    Expanded(child: Text(title,style: const TextStyle(fontSize: 12,letterSpacing: 1.3,fontWeight: FontWeight.bold,color: muted))),
+    if (onRefresh != null) TextButton(onPressed: onRefresh,child: const Text('Refresh')),
+  ]);
+}
 
-  Widget _sectionTitle(String text) => Text(text, style: const TextStyle(color: _muted, fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.w700));
+class DataLine extends StatelessWidget {
+  const DataLine({super.key,required this.title,required this.subtitle,required this.trailing,required this.icon});
+  final String title,subtitle; final String? trailing; final IconData icon;
+  @override Widget build(BuildContext context) => Card(
+    color: panel, child: ListTile(
+      leading: Icon(icon,color: accent), title: Text(title),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle,maxLines: 2,overflow: TextOverflow.ellipsis),
+      trailing: trailing == null || trailing!.isEmpty ? null : Text(trailing!,style: const TextStyle(color: muted,fontSize: 11)),
+    ),
+  );
+}
 
-  Widget _feature(IconData icon, String title, String subtitle) => Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _panel, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: _accent, size: 19)),
-          const SizedBox(width: 13),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text(subtitle, style: const TextStyle(color: _muted, height: 1.4, fontSize: 12)),
-          ])),
-        ]),
-      );
+class EmptyLine extends StatelessWidget {
+  const EmptyLine(this.text,{super.key}); final String text;
+  @override Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: Text(text,style: const TextStyle(color: muted,height: 1.5)),
+  );
+}
 
-  Widget _workspace() => ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('WORKSPACE', style: TextStyle(color: _accent, fontSize: 11, letterSpacing: 1.6, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        const Text('Your work, in your pocket.', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 10),
-        const Text('Projects, activity, tasks and decisions will appear here after secure cloud sign-in and sync are connected.', style: TextStyle(color: _muted, height: 1.5)),
-        const SizedBox(height: 22),
-        _feature(Icons.folder_open_outlined, 'Projects', 'Shared project records across Windows and mobile.'),
-        _feature(Icons.timeline, 'Activity timeline', 'See what changed, when it changed and where the evidence came from.'),
-        _feature(Icons.fact_check_outlined, 'Approvals', 'Review exact actions before authorising them.'),
-        _feature(Icons.insights_outlined, 'Monitoring', 'View provider health and acknowledge alerts.'),
-        if (_apiUrl.isEmpty) _statusCard(),
-      ]);
-
-  Widget _deviceSettings() => ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('DEVICE SETUP', style: TextStyle(color: _accent, fontSize: 11, letterSpacing: 1.6, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        const Text('Connect this device', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 9),
-        const Text('Enter the HTTPS address of the JARVIS cloud service. This phone must never connect directly to the private Windows loopback gateway.', style: TextStyle(color: _muted, height: 1.5)),
-        const SizedBox(height: 20),
-        TextField(
-          controller: _urlController,
-          keyboardType: TextInputType.url,
-          autocorrect: false,
-          decoration: const InputDecoration(labelText: 'Secure server address', hintText: 'https://your-jarvis-api.example.com'),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(width: double.infinity, child: FilledButton.icon(
-          onPressed: _checking ? null : _saveAndCheck,
-          icon: _checking ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.link),
-          label: Text(_checking ? 'Checking…' : 'Save and test connection'),
-        )),
-        if (_apiUrl.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          OutlinedButton.icon(onPressed: _disconnect, icon: const Icon(Icons.link_off), label: const Text('Disconnect this device')),
-        ],
-        const SizedBox(height: 22),
-        _statusCard(),
-        const SizedBox(height: 18),
-        const Text('Security', style: TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        const Text('Server address is stored in platform secure storage. Account sign-in, device registration and cloud sync will be enabled after the cloud identity API is implemented.', style: TextStyle(color: _muted, height: 1.5, fontSize: 12)),
-      ]);
+class ErrorLine extends StatelessWidget {
+  const ErrorLine(this.text,{super.key}); final String text;
+  @override Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(text,style: const TextStyle(color: Colors.orangeAccent,height: 1.4)),
+  );
 }
