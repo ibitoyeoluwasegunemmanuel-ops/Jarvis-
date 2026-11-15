@@ -9,13 +9,14 @@ loopback-only and must never be exposed to a phone, LAN, tunnel, or public IP.
 - Requires issuer and `authenticated` audience validation.
 - Derives user identity from the verified token subject; no caller-supplied owner ID.
 - Uses a transaction-local PostgreSQL identity for RLS checks.
+- Supports owner workspace bootstrap and device registration/revocation.
 - Provides workspace-scoped read access to projects and monitoring alerts.
-- Registers and revokes the current user's devices.
 - Exposes only a non-sensitive liveness endpoint without authentication.
 
 This is a backend foundation, not yet a complete mobile sign-in flow. Workspace
-creation/onboarding, refresh-token handling, push-token delivery, alert workers,
-approvals, realtime events, and production deployment are not included.
+membership management/invitations, refresh-token handling in the app, push-token
+delivery, alert workers, approvals, realtime events, and production deployment
+are not included.
 
 ## Required configuration
 
@@ -26,8 +27,18 @@ approvals, realtime events, and production deployment are not included.
 
 Never use a Supabase service-role key or a PostgreSQL superuser as the runtime
 database credential. Keep migration credentials separate from runtime credentials.
-The migration assumes a privileged migration role creates the `jarvis_api` role
-before applying the final grants.
+
+Before applying migrations, provision the runtime role using a privileged
+database administrator connection (set its password through your secret manager):
+
+```sql
+CREATE ROLE jarvis_api LOGIN NOBYPASSRLS;
+```
+
+Then apply `migrations/0001_cloud_identity_devices.sql` followed by
+`migrations/0002_workspace_bootstrap.sql` with the migration-owner role. The
+runtime role must not own the schema or protected tables. The migrations grant
+only the operations needed by this first API slice.
 
 ## Local development
 
@@ -37,9 +48,10 @@ pip install -e ".[dev]"
 uvicorn app.main:app --host 127.0.0.1 --port 8787
 ```
 
-Apply `migrations/0001_cloud_identity_devices.sql` with a privileged migration
-role after creating the NOBYPASSRLS runtime role. Configure the three environment
-variables before exercising authenticated routes.
+The container image is built from this directory with `docker build -t jarvis-cloud-api .`.
+Configure all three environment variables in the deployment platform's secret
+manager. Terminate public traffic at HTTPS and restrict CORS to the actual app
+origins when browser access is introduced.
 
 ## Security notes
 
