@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from jwt import PyJWKClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from psycopg import connect
 from psycopg.rows import dict_row
 
@@ -72,6 +72,14 @@ class WorkspaceCreate(BaseModel):
     timezone: str = Field(default="Africa/Lagos", min_length=1, max_length=80)
     locale: str = Field(default="en-NG", min_length=2, max_length=20)
 
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("workspace_name_required")
+        return value
+
 
 class ProjectSync(BaseModel):
     model_config = {"extra": "forbid"}
@@ -82,6 +90,14 @@ class ProjectSync(BaseModel):
     status: Literal["active", "paused", "completed"] = "active"
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
 
+    @field_validator("source_local_id", "name")
+    @classmethod
+    def clean_project_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("project_sync_field_required")
+        return value
+
 
 class DeviceRegistration(BaseModel):
     model_config = {"extra": "forbid"}
@@ -90,6 +106,14 @@ class DeviceRegistration(BaseModel):
     platform: Literal["windows", "android", "ios", "web"]
     os_version: str = Field(default="", max_length=80)
     app_version: str = Field(default="", max_length=40)
+
+    @field_validator("device_name")
+    @classmethod
+    def clean_device_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("device_name_required")
+        return value
 
 
 @app.get("/health")
