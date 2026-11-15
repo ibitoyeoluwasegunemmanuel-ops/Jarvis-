@@ -528,7 +528,7 @@ async fn execute_approved_project_task(
         let client = gateway_client()?;
         let response = client.post(gateway_url("/v1/execution/approved"))
             .header("X-Jarvis-Session", &runtime.session_token)
-            .header("X-Jarvis-Owner-Session", &owner_token)
+            .header("X-Jarvis-Owner-Session", owner_token.as_str())
             .json(&ApprovedExecutionPayload {
                 approval_id,
                 nonce: nonce.value.clone(),
@@ -857,12 +857,14 @@ async fn connect_cloud_and_sync(
         return Err("cloud_email_and_password_required".to_string());
     }
 
-    let mut owner_token = runtime
-        .owner_session
-        .lock()
-        .map_err(|_| "native_owner_session_unavailable".to_string())?
-        .clone()
-        .ok_or_else(|| "owner_session_required".to_string())?;
+    let owner_token = zeroize::Zeroizing::new(
+        runtime
+            .owner_session
+            .lock()
+            .map_err(|_| "native_owner_session_unavailable".to_string())?
+            .clone()
+            .ok_or_else(|| "owner_session_required".to_string())?,
+    );
 
     let local_client = gateway_client()?;
     let local_projects_result = async {
@@ -882,7 +884,6 @@ async fn connect_cloud_and_sync(
             .map_err(|_| "local_project_list_response_invalid".to_string())
     }
     .await;
-    owner_token.zeroize();
     let local_projects = local_projects_result?;
 
     let client = cloud_http_client()?;
@@ -1040,7 +1041,6 @@ async fn sync_cloud_projects(
         response.json::<Vec<ProjectRecord>>().await
             .map_err(|_| "local_project_list_response_invalid".to_string())
     }.await;
-    owner_token.zeroize();
     let projects = local_result?;
     let client = cloud_http_client()?;
     let synced = cloud_sync_project_records(&client, &mut session, &projects).await?;
