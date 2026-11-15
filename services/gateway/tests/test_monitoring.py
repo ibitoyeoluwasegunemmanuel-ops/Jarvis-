@@ -89,3 +89,42 @@ def test_alerts_deduplicate_and_acknowledge(monkeypatch, tmp_path):
     ack = acknowledge_alert(first["id"])
     assert ack["status"] == "acknowledged"
     assert ack["acknowledged_at"] is not None
+
+
+def test_provider_overview_uses_fixed_read_only_adapters(monkeypatch):
+    from app import monitoring_providers
+
+    monkeypatch.setenv("VERCEL_TOKEN", "vercel-test-token")
+    monkeypatch.setenv("SUPABASE_ACCESS_TOKEN", "supabase-test-token")
+    requested = []
+
+    def fake_get_json(url, token):
+        requested.append((url, token))
+        if "vercel.com" in url:
+            return {"deployments": [{"uid": "d1", "name": "worldscope",
+                                     "url": "example.vercel.app", "state": "READY"}]}
+        return [{"ref": "abcdefghijklmnopqrst", "name": "carelink",
+                 "region": "eu-west-1", "status": "ACTIVE_HEALTHY"}]
+
+    monkeypatch.setattr(monitoring_providers, "_get_json", fake_get_json)
+    result = monitoring_providers.provider_overview()
+    assert result["read_only"] is True
+    assert [item["status"] for item in result["providers"]] == ["connected", "connected"]
+    assert len(requested) == 2
+    assert all(url.startswith("https://api.") for url, _ in requested)
+    assert {token for _, token in requested} == {"vercel-test-token", "supabase-test-token"}
+
+
+def test_provider_overview_reports_missing_tokens_without_network(monkeypatch):
+    from app import monitoring_providers
+
+    monkeypatch.delenv("VERCEL_TOKEN", raising=False)
+    monkeypatch.delenv("SUPABASE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setattr(
+        monitoring_providers, "_get_json",
+        lambda *_: (_ for _ in ()).throw(AssertionError("network must not be called")),
+    )
+    result = monitoring_providers.provider_overview()
+    assert [item["status"] for item in result["providers"]] == [
+        "not_configured", "not_configured"
+    ]
