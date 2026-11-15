@@ -5,7 +5,7 @@
 - Added Windows device registration/heartbeat in the cloud workspace.
 - Added an idempotent first sync of local desktop project records into the shared cloud workspace, keyed by the immutable local project ID.
 - Added a Projects-page cloud connection panel with explicit Connect, Sync now and Disconnect controls.
-- Current sync scope is project metadata only (name, description, status). Tasks, decisions, milestones, risks, memory and audit history are not yet synchronised. Sync is manually triggered; automatic/background sync is not implemented.
+- Current sync scope is project metadata only (name, description, status). New project creation and project status changes trigger a sync while the desktop cloud session is connected; a manual Sync now action is also available. There is no periodic/background sync. Tasks, decisions, milestones, risks, memory and audit history are not yet synchronised.
 - Rust/Tauri/React changes have not yet been compiled or run through CI. Do not treat this as a verified desktop release. Cloud service/database configuration is also still outstanding.
 
 ## Desktop-to-cloud project sync API (Nov 15, 2026)
