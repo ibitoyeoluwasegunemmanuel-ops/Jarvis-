@@ -22,6 +22,7 @@ JARVIS is designed as a persistent, multimodal, voice-first AI system with a rea
 - [Integrated delivery plan](docs/INTEGRATED-DELIVERY-PLAN.md)
 - [Desktop runtime](docs/DESKTOP-RUNTIME.md)
 - [Extensible skills, knowledge and provider architecture](docs/EXTENSIBLE-SKILLS-AND-PROVIDERS.md)
+- [Founder workspace and presence UX](docs/FOUNDER-WORKSPACE-AND-PRESENCE-UX.md)
 
 ## Development
 
