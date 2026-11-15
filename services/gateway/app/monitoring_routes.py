@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.owner_auth import owner_session_is_valid
-from fastapi import HTTPException, Request
 from app.monitoring_store import (
     acknowledge_alert,
     create_alert,
@@ -16,6 +15,12 @@ from app.monitoring_store import (
 )
 
 router = APIRouter(prefix="/v1/monitoring", tags=["monitoring"])
+
+
+def require_monitoring_owner(request: Request) -> None:
+    token = request.headers.get("X-Jarvis-Owner-Session")
+    if not owner_session_is_valid(token):
+        raise HTTPException(status_code=401, detail="valid_owner_session_required")
 
 
 class ConnectorCreateRequest(BaseModel):
@@ -43,13 +48,13 @@ class AlertCreateRequest(BaseModel):
 
 
 @router.get("/connectors")
-def connectors_list(_: None = Depends(require_owner_session)) -> list[dict]:
+def connectors_list(_: None = Depends(require_monitoring_owner)) -> list[dict]:
     return list_connectors()
 
 
 @router.post("/connectors", status_code=201)
 def connector_create(
-    payload: ConnectorCreateRequest, _: None = Depends(require_owner_session)
+    payload: ConnectorCreateRequest, _: None = Depends(require_monitoring_owner)
 ) -> dict:
     try:
         return register_connector(
@@ -63,7 +68,7 @@ def connector_create(
 def connector_health_update(
     connector_id: str,
     payload: ConnectorHealthRequest,
-    _: None = Depends(require_owner_session),
+    _: None = Depends(require_monitoring_owner),
 ) -> dict:
     try:
         result = update_connector_health(connector_id, payload.status, payload.detail)
@@ -77,14 +82,14 @@ def connector_health_update(
 @router.get("/alerts")
 def alerts_list(
     status: Literal["open", "acknowledged", "resolved"] | None = None,
-    _: None = Depends(require_owner_session),
+    _: None = Depends(require_monitoring_owner),
 ) -> list[dict]:
     return list_alerts(status)
 
 
 @router.post("/alerts", status_code=201)
 def alert_create(
-    payload: AlertCreateRequest, _: None = Depends(require_owner_session)
+    payload: AlertCreateRequest, _: None = Depends(require_monitoring_owner)
 ) -> dict:
     try:
         return create_alert(
@@ -97,7 +102,7 @@ def alert_create(
 
 @router.post("/alerts/{alert_id}/acknowledge")
 def alert_acknowledge(
-    alert_id: str, _: None = Depends(require_owner_session)
+    alert_id: str, _: None = Depends(require_monitoring_owner)
 ) -> dict:
     result = acknowledge_alert(alert_id)
     if result is None:
