@@ -9,7 +9,7 @@ loopback-only and must never be exposed to a phone, LAN, tunnel, or public IP.
 - Requires issuer and `authenticated` audience validation.
 - Derives user identity from the verified token subject; no caller-supplied owner ID.
 - Uses a transaction-local PostgreSQL identity for RLS checks.
-- Supports owner workspace bootstrap and device registration/revocation.
+- Supports owner workspace bootstrap, device registration/list/revocation, and authenticated device heartbeat timestamps.
 - Provides workspace-scoped read access to projects and monitoring alerts.
 - Exposes only a non-sensitive liveness endpoint without authentication.
 
