@@ -2,11 +2,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.owner_auth import setup_owner
 from app.monitoring_store import (
     acknowledge_alert, create_alert, list_alerts, list_connectors,
     register_connector, update_connector_health,
 )
+from app.owner_auth import setup_owner
 
 
 @pytest.fixture
