@@ -111,3 +111,21 @@ Create ADRs for desktop shell/OS baseline, voice provider/Nigerian English bench
 
 ## 10. Quality gates
 Renderer cannot invoke arbitrary OS commands; operator enforces path/process/domain/session scopes; policy is not UI-only; secrets encrypted/redacted; tenant isolation tested; approvals action-bound and replay-resistant; results verified and audited; backup, restore, revoke, and emergency-stop tested.
+
+## 11. Extensible knowledge and provider ecosystem
+
+JARVIS has a first-class Skill & Knowledge Centre. Model providers, search providers, app/API integrations, and specialist skills are separate extension types with versioned manifests, declared permissions, health checks, provenance, compatibility and rollback. See [Extensible Skills and Providers](EXTENSIBLE-SKILLS-AND-PROVIDERS.md) for the candidate ecosystem, lifecycle and delivery criteria.
+
+Initial candidates to evaluate:
+- OpenRouter for multi-provider model routing and optional free model variants.
+- SearXNG for self-hosted metasearch, with optional independent search APIs such as Brave.
+- Composio and Nango for app/API connection and authentication workflows; evaluate hosted costs, self-hosting limits, licensing and data handling before adoption.
+- MCP as a protocol for compatible tools, never as a trust or permission boundary by itself.
+
+Knowledge ingestion must preserve source URL, timestamps, content hash, page references, confidence, freshness and deletion lineage. Learning is source-linked retrieval and approved profile/workflow updates, not an unsubstantiated claim that the foundation model retrained itself. All new providers, skills and connectors inherit central identity, policy, approval, secrets and audit controls.
+
+## 12. Cross-device clients and avatar
+
+Desktop, mobile and web clients share the same owner identity, memory, skill registry and project context. Device-specific permissions remain local to the device. Mobile supports voice/chat, shared documents and approvals; desktop adds supervised local operation; web provides remote workspace access. An optional telephony adapter can call the owner only under explicit opt-in and secure approval rules.
+
+The 3D avatar is a replaceable presentation layer. Its state must be driven by actual voice/orchestration events and verified action outcomes; it cannot imply work is occurring or completed when it is not.
