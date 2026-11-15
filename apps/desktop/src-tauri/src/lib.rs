@@ -840,18 +840,17 @@ async fn connect_cloud_and_sync(
     supabase_url: String,
     public_key: String,
     email: String,
-    mut password: String,
+    password: String,
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<CloudSyncStatus, String> {
+    let password = zeroize::Zeroizing::new(password);
     let api_url = validate_cloud_https_url(&api_url, "cloud_api")?;
     let supabase_url = validate_cloud_https_url(&supabase_url, "supabase")?;
     let public_key = public_key.trim().to_string();
     if public_key.is_empty() || public_key.len() > 512 {
-        password.zeroize();
         return Err("supabase_public_key_required".to_string());
     }
     if email.trim().is_empty() || password.is_empty() {
-        password.zeroize();
         return Err("cloud_email_and_password_required".to_string());
     }
 
@@ -887,10 +886,9 @@ async fn connect_cloud_and_sync(
     let auth_result = client
         .post(format!("{}/auth/v1/token?grant_type=password", supabase_url))
         .header("apikey", &public_key)
-        .json(&serde_json::json!({ "email": email.trim(), "password": password }))
+        .json(&serde_json::json!({ "email": email.trim(), "password": password.as_str() }))
         .send()
         .await;
-    password.zeroize();
     let auth_response = auth_result.map_err(|_| "supabase_auth_unavailable".to_string())?;
     if !auth_response.status().is_success() {
         return Err(format!("supabase_sign_in_failed_{}", auth_response.status().as_u16()));
@@ -1825,7 +1823,7 @@ pub fn run() {
                     owner_session.take();
                 }
                 if let Ok(mut cloud_session) = runtime.cloud_session.lock() {
-                    cloud_session.take();
+                    drop(cloud_session.take());
                 }
                 if let Ok(mut vault) = runtime.approval_nonces.lock() {
                     for entry in vault.values_mut() {
