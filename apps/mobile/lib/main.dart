@@ -114,7 +114,9 @@ class _JarvisHomeState extends State<JarvisHome> {
 
   Future<void> signOut() async {
     await client.signOut();
-    await storage.delete(key: 'jarvis_registered_device_id');
+    if (workspaceId.isNotEmpty) {
+      await storage.delete(key: 'jarvis_registered_device_id_$workspaceId');
+    }
     workspaces = []; workspace = null; projects = []; alerts = []; devices = []; overview = null;
   }
 
