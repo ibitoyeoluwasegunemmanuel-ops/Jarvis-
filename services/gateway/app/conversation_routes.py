@@ -1,6 +1,7 @@
 """Authenticated JARVIS conversation endpoint."""
 from typing import Literal
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -17,12 +18,12 @@ from app.monitoring_providers import github_repository
 
 router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
 logger = logging.getLogger(__name__)
-_GITHUB_QUERY_TERMS = ("github", "repository", "repo", "branch", "commit", "pull request", "pull-request", "pr ", "ci", "workflow", "build", "actions")
+_GITHUB_QUERY_TERMS = ("github", "repository", "repo", "branch", "commit", "pull request", "pull-request", "workflow", "build", "actions")
 
 
 def _github_context_for_query(query: str) -> str | None:
     lowered = query.lower()
-    if not any(term in lowered for term in _GITHUB_QUERY_TERMS):
+    if not any(term in lowered for term in _GITHUB_QUERY_TERMS) and not re.search(r"\\b(ci|pr)\\b", lowered):
         return None
     try:
         snapshot = github_repository()
