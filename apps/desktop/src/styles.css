@@ -240,3 +240,9 @@
 .conversation-message p{font-size:10px;line-height:1.65;color:#d8dced;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .conversation-thinking{display:flex;align-items:center;gap:8px;color:#9c91ce;font-size:9px;padding:5px}
 .conversation-thinking span{width:6px;height:6px;border-radius:50%;background:#a99aff;box-shadow:0 0 10px #a99aff}
+
+
+.project-form select{width:100%;border:1px solid #ffffff1a;background:#0a0e18;color:#edf0fa;border-radius:8px;padding:11px 12px;font:11px 'DM Sans',sans-serif;outline:none}
+.project-form select:focus{border-color:#9180e7;box-shadow:0 0 0 3px #8d75ff18}
+.project-form>button.primary-button{justify-self:start;border:0;border-radius:7px;background:#7962d8;color:white;padding:10px 14px;font-size:10px;font-weight:600;cursor:pointer}
+.project-form>button.primary-button:disabled{opacity:.45;cursor:not-allowed}
