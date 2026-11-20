@@ -13,9 +13,45 @@ from app.conversation_service import (
 )
 from app.conversation_store import list_conversation_history, save_conversation_turn
 from app.conversation_memory import retrieve_project_memory
+from app.monitoring_providers import github_repository
 
 router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
 logger = logging.getLogger(__name__)
+_GITHUB_QUERY_TERMS = ("github", "repository", "repo", "branch", "commit", "pull request", "pull-request", "pr ", "ci", "workflow", "build", "actions")
+
+
+def _github_context_for_query(query: str) -> str | None:
+    lowered = query.lower()
+    if not any(term in lowered for term in _GITHUB_QUERY_TERMS):
+        return None
+    try:
+        snapshot = github_repository()
+    except Exception:
+        logger.exception("conversation_github_context_failed")
+        return None
+    if snapshot.get("status") != "connected":
+        return None
+    lines = [
+        f"Repository: {snapshot.get('repository', 'unknown')}",
+        f"Default branch: {snapshot.get('default_branch', 'unknown')}",
+        "Branches: " + ", ".join(
+            str(item.get("name", "")) + (" (protected)" if item.get("protected") else "")
+            for item in snapshot.get("branches", [])[:10]
+        ),
+        "Recent commits: " + "; ".join(
+            f"{item.get('sha', '')}: {item.get('message', '')}"
+            for item in snapshot.get("recent_commits", [])[:5]
+        ),
+        "Open pull requests: " + "; ".join(
+            f"#{item.get('number', '')} {item.get('title', '')} ({item.get('head', '')} -> {item.get('base', '')})"
+            for item in snapshot.get("open_pull_requests", [])[:10]
+        ),
+        "Recent workflow runs: " + "; ".join(
+            f"{item.get('name', '')} on {item.get('branch', '')}: {item.get('status', '')}/{item.get('conclusion', '') or 'pending'}"
+            for item in snapshot.get("workflow_runs", [])[:10]
+        ),
+    ]
+    return "\\n".join(lines)[:6_000]
 
 
 class ConversationMessage(BaseModel):
@@ -48,9 +84,11 @@ def conversation_reply(payload: ConversationRequest) -> dict[str, str]:
             # Project memory is optional context; a local DB issue must not take chat offline.
             logger.exception("conversation_memory_retrieval_failed")
             memory_context = []
+        github_context = _github_context_for_query(latest_user_message)
         reply = create_assistant_reply(
             [message.model_dump() for message in payload.messages],
             memory_context=memory_context,
+            github_context=github_context,
         )
         save_conversation_turn(payload.messages[-1].content, reply["content"])
         return reply
