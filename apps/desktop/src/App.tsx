@@ -268,6 +268,23 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    invoke<Array<{ role: "user" | "assistant"; content: string; created_at: number }>>("list_conversation_history")
+      .then(history => {
+        if (!cancelled && history.length) {
+          const restored = history.map(({ role, content }) => ({ role, content }));
+          setMessages(restored.slice(-40));
+          const latestReply = [...restored].reverse().find(message => message.role === "assistant");
+          if (latestReply) setResponse(latestReply.content);
+        }
+      })
+      .catch(() => {
+        // History remains optional: a fresh conversation can still be started.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const startVoiceInput = () => {
     const SpeechRecognitionCtor = (window as SpeechWindow).SpeechRecognition
       || (window as SpeechWindow).webkitSpeechRecognition;
