@@ -76,6 +76,23 @@ struct CloudSyncStatus {
     synced_projects: usize,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct ConversationMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ConversationRequest<'a> {
+    messages: &'a [ConversationMessage],
+}
+
+#[derive(Deserialize)]
+struct ConversationReply {
+    role: String,
+    content: String,
+}
+
 #[derive(Deserialize, Serialize)]
 struct CloudMemoryRecord {
     id: String,
@@ -1778,6 +1795,54 @@ async fn update_project_status(
     result
 }
 
+/// Sends a bounded conversation through the authenticated local gateway.
+/// The owner session and process token never leave the native Rust process.
+#[tauri::command]
+async fn send_conversation(
+    messages: Vec<ConversationMessage>,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ConversationReply, String> {
+    if messages.is_empty() || messages.len() > 20 {
+        return Err("conversation_messages_invalid".to_string());
+    }
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let client = gateway_client()?;
+        let response = client
+            .post(gateway_url("/v1/conversation/reply"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ConversationRequest { messages: &messages })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err("conversation_provider_not_configured".to_string());
+        }
+        if response.status() == reqwest::StatusCode::BAD_GATEWAY {
+            return Err("conversation_provider_unavailable".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("conversation_request_failed_{}", response.status().as_u16()));
+        }
+        response.json::<ConversationReply>().await
+            .map_err(|_| "conversation_response_invalid".to_string())
+    }.await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
 ///
 /// The process token is generated in native code and passed only to the gateway
@@ -1793,6 +1858,7 @@ pub fn run() {
             connect_cloud_and_sync,
             sync_cloud_projects,
             get_cloud_sync_status,
+            send_conversation,
             list_cloud_memory,
             create_cloud_memory,
             disconnect_cloud,
