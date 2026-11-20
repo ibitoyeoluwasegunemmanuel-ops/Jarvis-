@@ -96,6 +96,8 @@ def test_provider_overview_uses_fixed_read_only_adapters(monkeypatch):
 
     monkeypatch.setenv("VERCEL_TOKEN", "vercel-test-token")
     monkeypatch.setenv("SUPABASE_ACCESS_TOKEN", "supabase-test-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-test-token")
+    monkeypatch.setenv("JARVIS_GITHUB_REPOSITORY", "ibitoyeoluwasegunemmanuel-ops/Jarvis-")
     requested = []
 
     def fake_get_json(url, token):
@@ -103,16 +105,45 @@ def test_provider_overview_uses_fixed_read_only_adapters(monkeypatch):
         if "vercel.com" in url:
             return {"deployments": [{"uid": "d1", "name": "worldscope",
                                      "url": "example.vercel.app", "state": "READY"}]}
-        return [{"ref": "abcdefghijklmnopqrst", "name": "carelink",
-                 "region": "eu-west-1", "status": "ACTIVE_HEALTHY"}]
+        if "api.supabase.com" in url:
+            return [{"ref": "abcdefghijklmnopqrst", "name": "carelink",
+                     "region": "eu-west-1", "status": "ACTIVE_HEALTHY"}]
+        if url.endswith("/branches?per_page=10"):
+            return [{"name": "main", "protected": True}]
+        if url.endswith("/commits?per_page=5"):
+            return [{"sha": "1234567890abcdef", "commit": {"message": "Initial commit",
+                     "author": {"name": "CEO Global", "date": "2026-11-20T12:00:00Z"}},
+                     "html_url": "https://github.com/example/repo/commit/123"}]
+        if url.endswith("/pulls?state=open&per_page=10"):
+            return [{"number": 1, "title": "Foundation", "state": "open",
+                     "html_url": "https://github.com/example/repo/pull/1",
+                     "head": {"ref": "feature"}, "base": {"ref": "main"}}]
+        if url.endswith("/actions/runs?per_page=10"):
+            return {"workflow_runs": [{"name": "JARVIS CI", "status": "completed",
+                     "conclusion": "success", "head_branch": "feature",
+                     "updated_at": "2026-11-20T12:00:00Z",
+                     "html_url": "https://github.com/example/repo/actions/runs/42"}]}
+        return {"full_name": "example/repo", "private": False,
+                "default_branch": "main", "updated_at": "2026-11-20T12:00:00Z",
+                "html_url": "https://github.com/example/repo"}
 
     monkeypatch.setattr(monitoring_providers, "_get_json", fake_get_json)
     result = monitoring_providers.provider_overview()
     assert result["read_only"] is True
-    assert [item["status"] for item in result["providers"]] == ["connected", "connected"]
-    assert len(requested) == 2
+    assert [item["status"] for item in result["providers"]] == [
+        "connected", "connected", "connected"
+    ]
+    github = result["providers"][2]
+    assert github["default_branch"] == "main"
+    assert github["recent_commits"][0]["message"] == "Initial commit"
+    assert github["open_pull_requests"][0]["number"] == 1
+    assert github["workflow_runs"][0]["name"] == "JARVIS CI"
+    assert github["workflow_runs"][0]["conclusion"] == "success"
+    assert len(requested) == 7
     assert all(url.startswith("https://api.") for url, _ in requested)
-    assert {token for _, token in requested} == {"vercel-test-token", "supabase-test-token"}
+    assert {token for _, token in requested} == {
+        "vercel-test-token", "supabase-test-token", "github-test-token"
+    }
 
 
 def test_provider_overview_reports_missing_tokens_without_network(monkeypatch):
@@ -120,11 +151,13 @@ def test_provider_overview_reports_missing_tokens_without_network(monkeypatch):
 
     monkeypatch.delenv("VERCEL_TOKEN", raising=False)
     monkeypatch.delenv("SUPABASE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("JARVIS_GITHUB_REPOSITORY", "invalid")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.setattr(
         monitoring_providers, "_get_json",
         lambda *_: (_ for _ in ()).throw(AssertionError("network must not be called")),
     )
     result = monitoring_providers.provider_overview()
     assert [item["status"] for item in result["providers"]] == [
-        "not_configured", "not_configured"
+        "not_configured", "not_configured", "unavailable"
     ]

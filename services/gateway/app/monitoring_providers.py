@@ -19,14 +19,18 @@ class ProviderUnavailable(RuntimeError):
     pass
 
 
-def _get_json(url: str, token: str) -> Any:
+def _get_json(url: str, token: str = "") -> Any:
+    headers = {
+        "Accept": "application/vnd.github+json" if "api.github.com/" in url else "application/json",
+        "User-Agent": "JARVIS-ReadOnly-Monitor/0.1",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if "api.github.com/" in url:
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
     request = urllib.request.Request(
         url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-            "User-Agent": "JARVIS-ReadOnly-Monitor/0.1",
-        },
+        headers=headers,
         method="GET",
     )
     try:
@@ -34,6 +38,8 @@ def _get_json(url: str, token: str) -> Any:
             if response.status != 200:
                 raise ProviderUnavailable("provider_http_error")
             body = response.read(_MAX_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as error:
+        raise ProviderUnavailable("provider_http_error") from error
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise ProviderUnavailable("provider_connection_failed") from error
     if len(body) > _MAX_RESPONSE_BYTES:
@@ -92,8 +98,119 @@ def supabase_projects() -> dict[str, Any]:
     return {"provider": "supabase", "status": "connected", "projects": projects}
 
 
+
+def github_repository() -> dict[str, Any]:
+    """Return a bounded, read-only snapshot of the configured GitHub repository."""
+    repository = os.environ.get(
+        "JARVIS_GITHUB_REPOSITORY",
+        "ibitoyeoluwasegunemmanuel-ops/Jarvis-",
+    ).strip()
+    parts = repository.split("/")
+    if (
+        len(parts) != 2
+        or any(not part or len(part) > 100 for part in parts)
+        or any(not all(ch.isalnum() or ch in "-_." for ch in part) for part in parts)
+    ):
+        return {
+            "provider": "github",
+            "status": "unavailable",
+            "detail": "github_repository_configuration_invalid",
+            "repository": repository[:200],
+            "branches": [],
+            "recent_commits": [],
+            "open_pull_requests": [],
+            "workflow_runs": [],
+        }
+
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    base = f"https://api.github.com/repos/{parts[0]}/{parts[1]}"
+    try:
+        repo_data = _get_json(base, token)
+        branches_data = _get_json(base + "/branches?per_page=10", token)
+        commits_data = _get_json(base + "/commits?per_page=5", token)
+        pulls_data = _get_json(base + "/pulls?state=open&per_page=10", token)
+        workflows_data = _get_json(base + "/actions/runs?per_page=10", token)
+    except ProviderUnavailable as error:
+        return {
+            "provider": "github",
+            "status": "unavailable",
+            "detail": str(error),
+            "repository": repository,
+            "branches": [],
+            "recent_commits": [],
+            "open_pull_requests": [],
+            "workflow_runs": [],
+        }
+
+    workflows = workflows_data.get("workflow_runs", []) if isinstance(workflows_data, dict) else None
+    if not isinstance(repo_data, dict) or not isinstance(branches_data, list) or not isinstance(commits_data, list) or not isinstance(pulls_data, list) or not isinstance(workflows, list):
+        return {
+            "provider": "github",
+            "status": "unavailable",
+            "detail": "provider_invalid_response",
+            "repository": repository,
+            "branches": [],
+            "recent_commits": [],
+            "open_pull_requests": [],
+            "workflow_runs": [],
+        }
+
+    branches = [
+        {"name": str(item.get("name", ""))[:120], "protected": bool(item.get("protected", False))}
+        for item in branches_data[:10] if isinstance(item, dict)
+    ]
+    commits = []
+    for item in commits_data[:5]:
+        if not isinstance(item, dict):
+            continue
+        commit = item.get("commit", {})
+        author = commit.get("author", {}) if isinstance(commit, dict) else {}
+        commits.append({
+            "sha": str(item.get("sha", ""))[:12],
+            "message": str(commit.get("message", "") if isinstance(commit, dict) else "")[:240],
+            "author": str(author.get("name", ""))[:100] if isinstance(author, dict) else "",
+            "committed_at": str(author.get("date", ""))[:40] if isinstance(author, dict) else "",
+            "url": str(item.get("html_url", ""))[:300],
+        })
+    pulls = [
+        {
+            "number": item.get("number"),
+            "title": str(item.get("title", ""))[:200],
+            "state": str(item.get("state", "open"))[:20],
+            "url": str(item.get("html_url", ""))[:300],
+            "head": str(item.get("head", {}).get("ref", ""))[:120],
+            "base": str(item.get("base", {}).get("ref", ""))[:120],
+        }
+        for item in pulls_data[:10] if isinstance(item, dict)
+    ]
+    workflow_runs = [
+        {
+            "name": str(item.get("name", ""))[:120],
+            "status": str(item.get("status", "unknown"))[:40],
+            "conclusion": str(item.get("conclusion") or "")[:40],
+            "branch": str(item.get("head_branch", ""))[:120],
+            "updated_at": str(item.get("updated_at", ""))[:40],
+            "url": str(item.get("html_url", ""))[:300],
+        }
+        for item in workflows[:10] if isinstance(item, dict)
+    ]
+    return {
+        "provider": "github",
+        "status": "connected",
+        "repository": str(repo_data.get("full_name", repository))[:200],
+        "private": bool(repo_data.get("private", False)),
+        "default_branch": str(repo_data.get("default_branch", ""))[:120],
+        "updated_at": str(repo_data.get("updated_at", ""))[:40],
+        "html_url": str(repo_data.get("html_url", ""))[:300],
+        "branches": branches,
+        "recent_commits": commits,
+        "open_pull_requests": pulls,
+        "workflow_runs": workflow_runs,
+    }
+
+
 def provider_overview() -> dict[str, Any]:
     return {
         "read_only": True,
-        "providers": [vercel_deployments(), supabase_projects()],
+        "providers": [vercel_deployments(), supabase_projects(), github_repository()],
     }

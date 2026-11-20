@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent};
@@ -9,7 +9,7 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 use uuid::Uuid;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 const GATEWAY_BASE_URL: &str = "http://127.0.0.1:8765";
 const GATEWAY_CAPABILITIES_PATH: &str = "/v1/system/capabilities";
@@ -41,7 +41,121 @@ struct GatewayRuntime {
     child: Mutex<Option<CommandChild>>,
     session_token: String,
     owner_session: Mutex<Option<String>>,
+    cloud_session: Mutex<Option<CloudSession>>,
     approval_nonces: Mutex<HashMap<String, ApprovalNonce>>,
+}
+
+#[derive(Clone)]
+struct CloudSession {
+    api_url: String,
+    supabase_url: String,
+    public_key: String,
+    access_token: String,
+    refresh_token: String,
+    expires_at: u64,
+    workspace_id: String,
+    workspace_name: String,
+    device_id: String,
+    synced_projects: usize,
+}
+
+impl Drop for CloudSession {
+    fn drop(&mut self) {
+        self.public_key.zeroize();
+        self.access_token.zeroize();
+        self.refresh_token.zeroize();
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct AiProviderConfig {
+    api_key: String,
+    model: String,
+    endpoint: String,
+}
+
+impl Drop for AiProviderConfig {
+    fn drop(&mut self) {
+        self.api_key.zeroize();
+    }
+}
+
+#[derive(Serialize)]
+struct AiProviderStatus {
+    configured: bool,
+    model: String,
+    endpoint: String,
+}
+
+#[cfg(target_os = "windows")]
+fn ai_provider_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new("com.ceoglobal.jarvis", "ai-provider-config")
+        .map_err(|_| "secure_credential_store_unavailable".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn read_ai_provider_config() -> Option<AiProviderConfig> {
+    let entry = ai_provider_entry().ok()?;
+    let mut raw = entry.get_password().ok()?;
+    let parsed = serde_json::from_str(&raw).ok();
+    raw.zeroize();
+    parsed
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_ai_provider_config() -> Option<AiProviderConfig> {
+    None
+}
+
+#[derive(Serialize)]
+struct CloudSyncStatus {
+    connected: bool,
+    workspace_id: String,
+    workspace_name: String,
+    device_id: String,
+    synced_projects: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ConversationMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ConversationRequest<'a> {
+    messages: &'a [ConversationMessage],
+}
+
+#[derive(Deserialize, Serialize)]
+struct ConversationReply {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ConversationHistoryMessage {
+    role: String,
+    content: String,
+    created_at: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+struct CloudMemoryRecord {
+    id: String,
+    workspace_id: String,
+    category: String,
+    content: String,
+    source_ref: String,
+    created_at: String,
+}
+
+#[derive(Serialize)]
+struct CloudMemoryCreatePayload<'a> {
+    workspace_id: &'a str,
+    category: &'a str,
+    content: &'a str,
+    source_ref: &'a str,
 }
 
 #[derive(Serialize)]
@@ -77,6 +191,8 @@ struct ApprovalRecord {
     expires_at: f64,
     decided_at: Option<f64>,
     consumed_at: Option<f64>,
+    #[serde(default)]
+    execution_available: bool,
 }
 #[derive(Deserialize)]
 struct ApprovalCreatedRecord {
@@ -413,6 +529,11 @@ async fn logout_owner(runtime: tauri::State<'_, GatewayRuntime>) -> Result<(), S
         for entry in vault.values_mut() { entry.value.zeroize(); }
         vault.clear();
     }
+    let cloud_session = runtime.cloud_session.lock().ok().and_then(|mut guard| guard.take());
+    if let Some(cloud_session) = cloud_session {
+        revoke_supabase_session(&cloud_session).await;
+        drop(cloud_session);
+    }
     let owner_session = runtime
         .owner_session
         .lock()
@@ -464,7 +585,7 @@ async fn execute_approved_project_task(
     description: String,
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<serde_json::Value, String> {
-    if approval_id.trim().is_empty() || approval_id.len() > 64
+    if !valid_workspace_id(&approval_id)
         || !valid_workspace_id(&project_id)
         || title.trim().is_empty() || title.trim().len() > 160
         || description.len() > 2000 {
@@ -493,7 +614,7 @@ async fn execute_approved_project_task(
         let client = gateway_client()?;
         let response = client.post(gateway_url("/v1/execution/approved"))
             .header("X-Jarvis-Session", &runtime.session_token)
-            .header("X-Jarvis-Owner-Session", &owner_token)
+            .header("X-Jarvis-Owner-Session", owner_token.as_str())
             .json(&ApprovedExecutionPayload {
                 approval_id,
                 nonce: nonce.value.clone(),
@@ -647,7 +768,16 @@ async fn list_project_approvals(project_id: String, runtime: tauri::State<'_, Ga
         let response = client.get(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).send().await.map_err(|_| "gateway_not_ready".to_string())?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
         if !response.status().is_success() { return Err(format!("approval_list_failed_{}", response.status().as_u16())); }
-        response.json::<Vec<ApprovalRecord>>().await.map_err(|_| "approval_list_response_invalid".into())
+        let mut records = response.json::<Vec<ApprovalRecord>>().await
+            .map_err(|_| "approval_list_response_invalid".to_string())?;
+        let mut vault = runtime.approval_nonces.lock()
+            .map_err(|_| "native_approval_vault_unavailable".to_string())?;
+        prune_expired_approval_nonces(&mut vault);
+        for record in &mut records {
+            record.execution_available = record.status == "approved"
+                && vault.contains_key(&record.id);
+        }
+        Ok(records)
     }.await;
     token.zeroize(); result
 }
@@ -681,6 +811,7 @@ async fn create_project_approval(project_id: String, action: String, arguments: 
             arguments: created.arguments, arguments_hash: created.arguments_hash,
             requester: created.requester, status: created.status, created_at: created.created_at,
             expires_at: created.expires_at, decided_at: None, consumed_at: None,
+            execution_available: false,
         })
     }.await;
     token.zeroize(); result
@@ -688,7 +819,7 @@ async fn create_project_approval(project_id: String, action: String, arguments: 
 
 #[tauri::command]
 async fn decide_project_approval(approval_id: String, approve: bool, runtime: tauri::State<'_, GatewayRuntime>) -> Result<serde_json::Value, String> {
-    if approval_id.trim().is_empty() || approval_id.len() > 64 { return Err("approval_id_invalid".into()); }
+    if !valid_workspace_id(&approval_id) { return Err("approval_id_invalid".into()); }
     let client = gateway_client()?;
     let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
     let result = async {
@@ -708,6 +839,360 @@ async fn decide_project_approval(approval_id: String, approve: bool, runtime: ta
         Ok(value)
     }.await;
     token.zeroize(); result
+}
+
+
+fn validate_cloud_https_url(raw: &str, label: &str) -> Result<String, String> {
+    let value = raw.trim().trim_end_matches('/').to_string();
+    let parsed = reqwest::Url::parse(&value).map_err(|_| format!("{label}_url_invalid"))?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err(format!("{label}_must_use_https"));
+    }
+    Ok(value)
+}
+
+fn cloud_now_epoch() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn cloud_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|_| "cloud_http_client_unavailable".to_string())
+}
+
+async fn cloud_sync_project_records(
+    client: &reqwest::Client,
+    session: &mut CloudSession,
+    projects: &[ProjectRecord],
+) -> Result<usize, String> {
+    if session.expires_at <= cloud_now_epoch() + 60 {
+        let response = client
+            .post(format!(
+                "{}/auth/v1/token?grant_type=refresh_token",
+                session.supabase_url
+            ))
+            .header("apikey", &session.public_key)
+            .json(&serde_json::json!({ "refresh_token": session.refresh_token }))
+            .send()
+            .await
+            .map_err(|_| "cloud_auth_refresh_unavailable".to_string())?;
+        if !response.status().is_success() {
+            return Err("cloud_session_expired_reconnect_required".to_string());
+        }
+        let data = response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| "cloud_auth_refresh_response_invalid".to_string())?;
+        let access = data["access_token"]
+            .as_str()
+            .ok_or_else(|| "cloud_auth_refresh_response_invalid".to_string())?
+            .to_string();
+        let refresh = data["refresh_token"]
+            .as_str()
+            .unwrap_or(&session.refresh_token)
+            .to_string();
+        let expires_in = data["expires_in"].as_u64().unwrap_or(3600);
+        session.access_token.zeroize();
+        session.refresh_token.zeroize();
+        session.access_token = access;
+        session.refresh_token = refresh;
+        session.expires_at = cloud_now_epoch() + expires_in;
+    }
+
+    let mut synced = 0usize;
+    for project in projects {
+        let response = client
+            .post(format!("{}/v1/projects/sync", session.api_url))
+            .bearer_auth(&session.access_token)
+            .json(&serde_json::json!({
+                "workspace_id": session.workspace_id,
+                "source_local_id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "status": project.status,
+                "priority": "normal"
+            }))
+            .send()
+            .await
+            .map_err(|_| "cloud_project_sync_unavailable".to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("cloud_project_sync_failed_{}", response.status().as_u16()));
+        }
+        synced += 1;
+    }
+    session.synced_projects = synced;
+    Ok(synced)
+}
+
+#[tauri::command]
+async fn connect_cloud_and_sync(
+    api_url: String,
+    supabase_url: String,
+    public_key: String,
+    email: String,
+    password: String,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<CloudSyncStatus, String> {
+    let password = zeroize::Zeroizing::new(password);
+    let api_url = validate_cloud_https_url(&api_url, "cloud_api")?;
+    let supabase_url = validate_cloud_https_url(&supabase_url, "supabase")?;
+    let public_key = public_key.trim().to_string();
+    if public_key.is_empty() || public_key.len() > 512 {
+        return Err("supabase_public_key_required".to_string());
+    }
+    if email.trim().is_empty() || password.is_empty() {
+        return Err("cloud_email_and_password_required".to_string());
+    }
+
+    let owner_token = zeroize::Zeroizing::new(
+        runtime
+            .owner_session
+            .lock()
+            .map_err(|_| "native_owner_session_unavailable".to_string())?
+            .clone()
+            .ok_or_else(|| "owner_session_required".to_string())?,
+    );
+
+    let local_client = gateway_client()?;
+    let local_projects_result = async {
+        let response = local_client
+            .get(gateway_url(GATEWAY_PROJECTS_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", owner_token.as_str())
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("local_project_list_failed_{}", response.status().as_u16()));
+        }
+        response
+            .json::<Vec<ProjectRecord>>()
+            .await
+            .map_err(|_| "local_project_list_response_invalid".to_string())
+    }
+    .await;
+    let local_projects = local_projects_result?;
+
+    let client = cloud_http_client()?;
+    let auth_result = client
+        .post(format!("{}/auth/v1/token?grant_type=password", supabase_url))
+        .header("apikey", &public_key)
+        .json(&serde_json::json!({ "email": email.trim(), "password": password.as_str() }))
+        .send()
+        .await;
+    let auth_response = auth_result.map_err(|_| "supabase_auth_unavailable".to_string())?;
+    if !auth_response.status().is_success() {
+        return Err(format!("supabase_sign_in_failed_{}", auth_response.status().as_u16()));
+    }
+    let auth_data = auth_response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "supabase_auth_response_invalid".to_string())?;
+    let access_token = auth_data["access_token"]
+        .as_str()
+        .ok_or_else(|| "supabase_session_not_returned_confirm_email_or_sign_in".to_string())?
+        .to_string();
+    let refresh_token = auth_data["refresh_token"]
+        .as_str()
+        .ok_or_else(|| "supabase_refresh_token_missing".to_string())?
+        .to_string();
+    let expires_in = auth_data["expires_in"].as_u64().unwrap_or(3600);
+
+    let mut session = CloudSession {
+        api_url,
+        supabase_url,
+        public_key,
+        access_token,
+        refresh_token,
+        expires_at: cloud_now_epoch() + expires_in,
+        workspace_id: String::new(),
+        workspace_name: String::new(),
+        device_id: String::new(),
+        synced_projects: 0,
+    };
+
+    let workspaces_response = client
+        .get(format!("{}/v1/workspaces", session.api_url))
+        .bearer_auth(&session.access_token)
+        .send()
+        .await
+        .map_err(|_| "cloud_workspace_list_unavailable".to_string())?;
+    if !workspaces_response.status().is_success() {
+        return Err(format!("cloud_workspace_list_failed_{}", workspaces_response.status().as_u16()));
+    }
+    let mut workspaces = workspaces_response
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .map_err(|_| "cloud_workspace_list_invalid".to_string())?;
+    if workspaces.is_empty() {
+        let created = client
+            .post(format!("{}/v1/workspaces", session.api_url))
+            .bearer_auth(&session.access_token)
+            .json(&serde_json::json!({ "name": "JARVIS Workspace", "timezone": "Africa/Lagos", "locale": "en-NG" }))
+            .send()
+            .await
+            .map_err(|_| "cloud_workspace_create_unavailable".to_string())?;
+        if !created.status().is_success() {
+            return Err(format!("cloud_workspace_create_failed_{}", created.status().as_u16()));
+        }
+        workspaces.push(created.json::<serde_json::Value>().await
+            .map_err(|_| "cloud_workspace_create_response_invalid".to_string())?);
+    }
+    let workspace = workspaces.first().ok_or_else(|| "cloud_workspace_missing".to_string())?;
+    session.workspace_id = workspace["id"].as_str()
+        .ok_or_else(|| "cloud_workspace_id_missing".to_string())?.to_string();
+    session.workspace_name = workspace["name"].as_str().unwrap_or("JARVIS Workspace").to_string();
+
+    let devices_response = client
+        .get(format!("{}/v1/devices", session.api_url))
+        .query(&[("workspace_id", session.workspace_id.as_str())])
+        .bearer_auth(&session.access_token)
+        .send()
+        .await
+        .map_err(|_| "cloud_device_list_unavailable".to_string())?;
+    if !devices_response.status().is_success() {
+        return Err(format!("cloud_device_list_failed_{}", devices_response.status().as_u16()));
+    }
+    let devices = devices_response
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .map_err(|_| "cloud_device_list_invalid".to_string())?;
+    if let Some(existing) = devices.iter().find(|device| {
+        device["platform"] == "windows" && device["device_name"] == "JARVIS Windows Desktop"
+    }) {
+        session.device_id = existing["id"].as_str().unwrap_or_default().to_string();
+        let _ = client
+            .post(format!("{}/v1/devices/{}/heartbeat", session.api_url, session.device_id))
+            .bearer_auth(&session.access_token)
+            .send()
+            .await;
+    } else {
+        let registered = client
+            .post(format!("{}/v1/devices", session.api_url))
+            .bearer_auth(&session.access_token)
+            .json(&serde_json::json!({
+                "workspace_id": session.workspace_id,
+                "device_name": "JARVIS Windows Desktop",
+                "platform": "windows",
+                "app_version": env!("CARGO_PKG_VERSION")
+            }))
+            .send()
+            .await
+            .map_err(|_| "cloud_device_register_unavailable".to_string())?;
+        if !registered.status().is_success() {
+            return Err(format!("cloud_device_register_failed_{}", registered.status().as_u16()));
+        }
+        let data = registered.json::<serde_json::Value>().await
+            .map_err(|_| "cloud_device_register_response_invalid".to_string())?;
+        session.device_id = data["id"].as_str().unwrap_or_default().to_string();
+    }
+
+    let synced = cloud_sync_project_records(&client, &mut session, &local_projects).await?;
+    let status = CloudSyncStatus {
+        connected: true,
+        workspace_id: session.workspace_id.clone(),
+        workspace_name: session.workspace_name.clone(),
+        device_id: session.device_id.clone(),
+        synced_projects: synced,
+    };
+    let mut guard = runtime.cloud_session.lock()
+        .map_err(|_| "native_cloud_session_unavailable".to_string())?;
+    *guard = Some(session);
+    Ok(status)
+}
+
+#[tauri::command]
+async fn sync_cloud_projects(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<CloudSyncStatus, String> {
+    let mut session = runtime.cloud_session.lock()
+        .map_err(|_| "native_cloud_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "cloud_account_not_connected".to_string())?;
+    let mut owner_token = runtime.owner_session.lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+    let local_client = gateway_client()?;
+    let local_result = async {
+        let response = local_client
+            .get(gateway_url(GATEWAY_PROJECTS_PATH))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", owner_token.as_str())
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("local_project_list_failed_{}", response.status().as_u16()));
+        }
+        response.json::<Vec<ProjectRecord>>().await
+            .map_err(|_| "local_project_list_response_invalid".to_string())
+    }.await;
+    let projects = local_result?;
+    let client = cloud_http_client()?;
+    let synced = cloud_sync_project_records(&client, &mut session, &projects).await?;
+    let status = CloudSyncStatus {
+        connected: true,
+        workspace_id: session.workspace_id.clone(),
+        workspace_name: session.workspace_name.clone(),
+        device_id: session.device_id.clone(),
+        synced_projects: synced,
+    };
+    let mut guard = runtime.cloud_session.lock()
+        .map_err(|_| "native_cloud_session_unavailable".to_string())?;
+    *guard = Some(session);
+    Ok(status)
+}
+
+async fn revoke_supabase_session(session: &CloudSession) {
+    if let Ok(client) = cloud_http_client() {
+        let _ = client
+            .post(format!("{}/auth/v1/logout", session.supabase_url))
+            .header("apikey", &session.public_key)
+            .bearer_auth(&session.access_token)
+            .send()
+            .await;
+    }
+}
+
+#[tauri::command]
+async fn disconnect_cloud(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<(), String> {
+    let session = {
+        let mut guard = runtime.cloud_session.lock()
+            .map_err(|_| "native_cloud_session_unavailable".to_string())?;
+        guard.take()
+    };
+    if let Some(session) = session {
+        revoke_supabase_session(&session).await;
+        drop(session);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_cloud_sync_status(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Option<CloudSyncStatus>, String> {
+    let guard = runtime.cloud_session.lock()
+        .map_err(|_| "native_cloud_session_unavailable".to_string())?;
+    Ok(guard.as_ref().map(|session| CloudSyncStatus {
+        connected: true,
+        workspace_id: session.workspace_id.clone(),
+        workspace_name: session.workspace_name.clone(),
+        device_id: session.device_id.clone(),
+        synced_projects: session.synced_projects,
+    }))
 }
 
 #[tauri::command]
@@ -1369,6 +1854,168 @@ async fn update_project_status(
     result
 }
 
+/// Store the AI provider credential in Windows Credential Manager.
+#[tauri::command]
+fn save_ai_provider_config(
+    mut api_key: String,
+    model: String,
+    endpoint: Option<String>,
+) -> Result<AiProviderStatus, String> {
+    let mut api_key = Zeroizing::new(api_key);
+    let model = model.trim().to_string();
+    let endpoint = endpoint.unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
+    let endpoint = endpoint.trim().to_string();
+    if api_key.trim().len() < 10 || api_key.len() > 4096 || model.is_empty() || model.len() > 120 {
+        api_key.zeroize();
+        return Err("ai_provider_configuration_invalid".to_string());
+    }
+    if !endpoint.starts_with("https://") || endpoint.len() > 500 {
+        api_key.zeroize();
+        return Err("ai_provider_endpoint_must_use_https".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let entry = ai_provider_entry()?;
+        let config = AiProviderConfig { api_key: api_key.as_str().to_string(), model: model.clone(), endpoint: endpoint.clone() };
+        let mut serialized = serde_json::to_string(&config)
+            .map_err(|_| "ai_provider_configuration_invalid".to_string())?;
+        let stored = entry.set_password(&serialized);
+        serialized.zeroize();
+        stored.map_err(|_| "secure_credential_store_write_failed".to_string())?;
+        api_key.zeroize();
+        return Ok(AiProviderStatus { configured: true, model, endpoint });
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        api_key.zeroize();
+        Err("secure_ai_provider_storage_supported_on_windows_only".to_string())
+    }
+}
+
+/// Removes the saved AI provider credential from Windows Credential Manager.
+#[tauri::command]
+fn remove_ai_provider_config() -> Result<AiProviderStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let entry = ai_provider_entry()?;
+        match entry.delete_credential() {
+            Ok(()) => {},
+            Err(keyring::Error::NoEntry) => {},
+            Err(_) => return Err("secure_credential_store_delete_failed".to_string()),
+        }
+        return Ok(AiProviderStatus {
+            configured: false,
+            model: String::new(),
+            endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
+        });
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("secure_ai_provider_storage_supported_on_windows_only".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_ai_provider_status() -> AiProviderStatus {
+    match read_ai_provider_config() {
+        Some(config) => AiProviderStatus {
+            configured: true,
+            model: config.model.clone(),
+            endpoint: config.endpoint.clone(),
+        },
+        None => AiProviderStatus {
+            configured: false,
+            model: String::new(),
+            endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
+        },
+    }
+}
+
+/// Loads the recent persisted conversation through the owner-authenticated bridge.
+#[tauri::command]
+async fn list_conversation_history(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ConversationHistoryMessage>, String> {
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let client = gateway_client()?;
+        let response = client
+            .get(gateway_url("/v1/conversation/history"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("conversation_history_failed_{}", response.status().as_u16()));
+        }
+        response.json::<Vec<ConversationHistoryMessage>>()
+            .await
+            .map_err(|_| "conversation_history_response_invalid".to_string())
+    }.await;
+
+    owner_token.zeroize();
+    result
+}
+
+/// Sends a bounded conversation through the authenticated local gateway.
+/// The owner session and process token never leave the native Rust process.
+#[tauri::command]
+async fn send_conversation(
+    messages: Vec<ConversationMessage>,
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<ConversationReply, String> {
+    if messages.is_empty() || messages.len() > 20 {
+        return Err("conversation_messages_invalid".to_string());
+    }
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let client = gateway_client()?;
+        let response = client
+            .post(gateway_url("/v1/conversation/reply"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .json(&ConversationRequest { messages: &messages })
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err("conversation_provider_not_configured".to_string());
+        }
+        if response.status() == reqwest::StatusCode::BAD_GATEWAY {
+            return Err("conversation_provider_unavailable".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("conversation_request_failed_{}", response.status().as_u16()));
+        }
+        response.json::<ConversationReply>().await
+            .map_err(|_| "conversation_response_invalid".to_string())
+    }.await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Starts the native JARVIS desktop shell and its private gateway sidecar.
 ///
 /// The process token is generated in native code and passed only to the gateway
@@ -1381,6 +2028,17 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_gateway_capabilities,
             get_owner_auth_status,
+            connect_cloud_and_sync,
+            sync_cloud_projects,
+            get_cloud_sync_status,
+            send_conversation,
+            list_conversation_history,
+            save_ai_provider_config,
+            get_ai_provider_status,
+            remove_ai_provider_config,
+            list_cloud_memory,
+            create_cloud_memory,
+            disconnect_cloud,
             setup_owner,
             login_owner,
             logout_owner,
@@ -1409,30 +2067,36 @@ pub fn run() {
         ])
         .setup(|app| {
             let token = new_session_token();
+            let provider = read_ai_provider_config();
             let child = match app.shell().sidecar("jarvis-gateway") {
-                Ok(command) => match command
-                    .args(["--host", "127.0.0.1", "--port", "8765"])
-                    .env("JARVIS_SESSION_TOKEN", token.clone())
-                    .set_process_group(true)
-                    .kill_on_drop(true)
-                    .spawn()
-                {
-                    Ok((mut events, child)) => {
-                        // Drain process output without forwarding it to the webview.
-                        tauri::async_runtime::spawn(async move {
-                            while let Some(event) = events.recv().await {
-                                if matches!(event, CommandEvent::Terminated(_)) {
-                                    break;
+                Ok(command) => {
+                    let mut command = command
+                        .args(["--host", "127.0.0.1", "--port", "8765"])
+                        .env("JARVIS_SESSION_TOKEN", token.clone());
+                    if let Some(config) = provider.as_ref() {
+                        command = command
+                            .env("JARVIS_AI_API_KEY", config.api_key.clone())
+                            .env("JARVIS_AI_MODEL", config.model.clone())
+                            .env("JARVIS_AI_ENDPOINT", config.endpoint.clone());
+                    }
+                    match command.set_process_group(true).kill_on_drop(true).spawn() {
+                        Ok((mut events, child)) => {
+                            // Drain process output without forwarding it to the webview.
+                            tauri::async_runtime::spawn(async move {
+                                while let Some(event) = events.recv().await {
+                                    if matches!(event, CommandEvent::Terminated(_)) {
+                                        break;
+                                    }
                                 }
-                            }
-                        });
-                        Some(child)
+                            });
+                            Some(child)
+                        }
+                        Err(error) => {
+                            eprintln!("JARVIS gateway sidecar failed to start: {error}");
+                            None
+                        }
                     }
-                    Err(error) => {
-                        eprintln!("JARVIS gateway sidecar failed to start: {error}");
-                        None
-                    }
-                },
+                }
                 Err(error) => {
                     eprintln!("JARVIS gateway sidecar is unavailable: {error}");
                     None
@@ -1443,6 +2107,7 @@ pub fn run() {
                 child: Mutex::new(child),
                 session_token: token,
                 owner_session: Mutex::new(None),
+                cloud_session: Mutex::new(None),
                 approval_nonces: Mutex::new(HashMap::new()),
             });
             Ok(())
@@ -1458,6 +2123,9 @@ pub fn run() {
                         token.zeroize();
                     }
                     owner_session.take();
+                }
+                if let Ok(mut cloud_session) = runtime.cloud_session.lock() {
+                    drop(cloud_session.take());
                 }
                 if let Ok(mut vault) = runtime.approval_nonces.lock() {
                     for entry in vault.values_mut() {
@@ -1487,5 +2155,25 @@ impl Drop for GatewayRuntime {
             for entry in vault.values_mut() { entry.value.zeroize(); }
             vault.clear();
         }
+    }
+}
+
+
+#[cfg(test)]
+mod identifier_tests {
+    use super::valid_workspace_id;
+
+    #[test]
+    fn accepts_compact_hexadecimal_identifiers() {
+        assert!(valid_workspace_id("0123456789abcdef0123456789ABCDEF"));
+    }
+
+    #[test]
+    fn rejects_malformed_identifiers() {
+        assert!(!valid_workspace_id(""));
+        assert!(!valid_workspace_id("0123456789abcdef"));
+        assert!(!valid_workspace_id("01234567-89ab-cdef-0123-456789abcdef"));
+        assert!(!valid_workspace_id("../approvals"));
+        assert!(!valid_workspace_id("0123456789abcdef0123456789abcdeg"));
     }
 }

@@ -23,6 +23,8 @@ JARVIS is designed as a persistent, multimodal, voice-first AI system with a rea
 - [Desktop runtime](docs/DESKTOP-RUNTIME.md)
 - [Extensible skills, knowledge and provider architecture](docs/EXTENSIBLE-SKILLS-AND-PROVIDERS.md)
 - [Founder workspace and presence UX](docs/FOUNDER-WORKSPACE-AND-PRESENCE-UX.md)
+- [Cross-device implementation](docs/CROSS-DEVICE-IMPLEMENTATION.md)
+- [Cloud API service](services/cloud-api/README.md)
 
 ## Development
 
@@ -36,6 +38,8 @@ The sidecar helper requires Python 3.11, Rust stable, and PyInstaller. It create
 
 ## Current status
 The repository includes a Tauri 2 Windows desktop shell, a loopback-only packaged FastAPI sidecar, local single-owner authentication, and an owner-only local Projects workspace. Projects support creation and status tracking; each project supports task creation, listing, and status tracking, an immutable audit-history timeline, an append-only decision journal with rationale and source references, and milestone planning with target dates and tracked status. Project, task, and decision changes append audit events. CI run #93 passed desktop typecheck/build, Ruff, 32 gateway tests, the packaged Windows gateway smoke test, the NSIS installer build, and installer artifact upload. The Windows installer is available as the `jarvis-windows-x64-installer` artifact on the [successful CI run](https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/actions/runs/43577694380). The milestone and decision-journal workspace now passes Ruff and 37 gateway tests; desktop typecheck/build also pass. The latest Windows packaged-sidecar and installer checks are still running. See [Build Status](docs/BUILD-STATUS.md) for the exact validation state. Voice, avatar, project decisions/milestones, persistent memory, specialist execution, and computer-use tools remain in development. No physical-device installer test or signed installer is claimed.
+
+The cross-device branch now includes an isolated `services/cloud-api` foundation with Supabase asymmetric-JWT verification, PostgreSQL transaction identity, workspace bootstrap, device registration/revocation, and RLS-backed read routes. It is not deployed or configured yet; cloud sync, push delivery, background monitoring, and mobile sign-in are not complete. See [Build Status](docs/BUILD-STATUS.md) and the [Cloud API setup](services/cloud-api/README.md).
 
 ## Safety boundary
 JARVIS is an authorized personal productivity and engineering assistant. It must not perform covert recording, unauthorized access, credential theft, malware deployment, evasion, or surveillance of targeted private individuals. Security testing is limited to systems the user owns or is explicitly authorized to assess.

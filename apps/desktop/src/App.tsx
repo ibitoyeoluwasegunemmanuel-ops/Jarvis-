@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -12,6 +12,7 @@ import {
   MonitorUp,
   Radio,
   ShieldCheck,
+  Settings,
   Sparkles,
   TerminalSquare
 } from "lucide-react";
@@ -21,6 +22,11 @@ type MonitoringProvider = {
   provider: string; status: "connected" | "not_configured" | "unavailable";
   detail?: string; deployments?: Array<{ id: string; name: string; url: string; state: string; created_at?: number; target: string }>;
   projects?: Array<{ ref: string; name: string; region: string; status: string; created_at: string }>;
+  repository?: string; default_branch?: string; html_url?: string; updated_at?: string;
+  branches?: Array<{ name: string; protected: boolean }>;
+  recent_commits?: Array<{ sha: string; message: string; author: string; committed_at: string; url: string }>;
+  open_pull_requests?: Array<{ number: number; title: string; state: string; url: string; head: string; base: string }>;
+  workflow_runs?: Array<{ name: string; status: string; conclusion: string; branch: string; updated_at: string; url: string }>;
 };
 type MonitoringOverview = { read_only: boolean; providers: MonitoringProvider[] };
 type GatewayCapabilities = {
@@ -42,6 +48,19 @@ type OwnerAuthStatus = {
   setup_required: boolean;
   authenticated: boolean;
 };
+type CloudMemoryRecord = {
+  id: string; workspace_id: string; category: "preference" | "fact" | "decision" | "note" | "reference";
+  content: string; source_ref: string; created_at: string;
+};
+type AiProviderStatus = { configured: boolean; model: string; endpoint: string };
+type CloudSyncStatus = {
+  connected: boolean;
+  workspace_id: string;
+  workspace_name: string;
+  device_id: string;
+  synced_projects: number;
+};
+
 type Project = {
   id: string;
   name: string;
@@ -96,6 +115,7 @@ type ProjectApproval = {
   arguments_hash: string; requester: string;
   status: "pending" | "approved" | "denied" | "consumed" | "expired";
   created_at: number; expires_at: number; decided_at: number | null; consumed_at: number | null;
+  execution_available: boolean;
 };
 
 type ProjectMilestone = {
@@ -227,6 +247,189 @@ function AuthScreen({
   );
 }
 
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechWindow = Window & {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+};
+type WorkspacePanel = "home" | "github" | "projects" | "calendar";
+
+function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
+  const [panel, setPanel] = useState<WorkspacePanel>("home");
+  const [command, setCommand] = useState("");
+  const [response, setResponse] = useState("I am ready. Choose a workspace panel or ask me a question.");
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [thinking, setThinking] = useState(false);
+  const [conversationError, setConversationError] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<Array<{ role: "user" | "assistant"; content: string; created_at: number }>>("list_conversation_history")
+      .then(history => {
+        if (!cancelled && history.length) {
+          const restored = history.map(({ role, content }) => ({ role, content }));
+          setMessages(restored.slice(-40));
+          const latestReply = [...restored].reverse().find(message => message.role === "assistant");
+          if (latestReply) setResponse(latestReply.content);
+        }
+      })
+      .catch(() => {
+        // History remains optional: a fresh conversation can still be started.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const startVoiceInput = () => {
+    const SpeechRecognitionCtor = (window as SpeechWindow).SpeechRecognition
+      || (window as SpeechWindow).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setVoiceError("Speech recognition is not available in this Windows WebView. You can still type to JARVIS.");
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = "en-NG";
+      recognition.interimResults = false;
+      recognition.continuous = false;
+      recognition.onresult = event => {
+        const transcript = event.results[0]?.[0]?.transcript?.trim();
+        if (transcript) setCommand(transcript);
+      };
+      recognition.onerror = () => {
+        setVoiceError("Microphone input could not be started. Check Windows microphone permission.");
+        setListening(false);
+      };
+      recognition.onend = () => setListening(false);
+      recognitionRef.current = recognition;
+      setVoiceError("");
+      setListening(true);
+      recognition.start();
+    } catch {
+      setListening(false);
+      setVoiceError("Microphone input could not be started. Check Windows microphone permission.");
+    }
+  };
+  const speakLatest = () => {
+    if (!("speechSynthesis" in window)) {
+      setVoiceError("Speech output is not available in this Windows WebView.");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const latest = [...messages].reverse().find(message => message.role === "assistant")?.content || response;
+    const utterance = new SpeechSynthesisUtterance(latest);
+    utterance.lang = "en-NG";
+    utterance.rate = 1;
+    utterance.pitch = 0.96;
+    window.speechSynthesis.speak(utterance);
+    setVoiceError("");
+  };
+  const openPanel = (next: WorkspacePanel) => {
+    setPanel(next);
+    const messages: Record<WorkspacePanel, string> = {
+      home: "Your JARVIS workspace is ready.",
+      github: "GitHub workspace selected. The repository link below opens your connected JARVIS source. Live account authorisation and repository data sync are not connected yet.",
+      projects: "Your locally stored JARVIS projects are available in the Projects section. Cloud-wide project and task synchronisation is still being expanded.",
+      calendar: "Calendar panel selected. Connect a calendar integration to load events; no calendar account is connected yet."
+    };
+    setResponse(messages[next]);
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const value = command.trim();
+    if (!value) return;
+    const normalized = value.toLowerCase().replace(/[.!?]/g, " ");
+    const requestedPanel: WorkspacePanel | null =
+      /\b(github|git hub|repository|repo)\b/.test(normalized) ? "github" :
+      /\b(projects?|tasks?)\b/.test(normalized) ? "projects" :
+      /\b(calendar|schedule|events?)\b/.test(normalized) ? "calendar" :
+      /\b(home|overview|dashboard)\b/.test(normalized) ? "home" : null;
+    if (requestedPanel) {
+      openPanel(requestedPanel);
+      if (requestedPanel === "projects") onOpenProjects();
+      setResponse(
+        requestedPanel === "github"
+          ? "Opening your JARVIS GitHub workspace. Use the repository link in the panel to open GitHub."
+          : requestedPanel === "projects"
+            ? "Opening your Projects section."
+            : requestedPanel === "calendar"
+              ? "Showing the calendar panel. No calendar account is connected yet."
+              : "Showing your JARVIS overview."
+      );
+    } else {
+      const nextMessages = [...messages, { role: "user" as const, content: value }].slice(-20);
+      setMessages(nextMessages);
+      setConversationError("");
+      setThinking(true);
+      setResponse("Thinking…");
+      setCommand("");
+      try {
+        const reply = await invoke<{ role: "assistant"; content: string }>("send_conversation", { messages: nextMessages });
+        setMessages([...nextMessages, reply].slice(-20));
+        setResponse(reply.content);
+      } catch (error) {
+        const message = String(error);
+        const friendly = message.includes("conversation_provider_not_configured")
+          ? "The conversation engine is connected, but an AI provider key and model have not been configured on this computer yet."
+          : message.includes("owner_session_expired")
+            ? "Your secure JARVIS session expired. Sign in again to continue."
+            : message.includes("conversation_provider_unavailable")
+              ? "The AI provider could not be reached. Check the provider connection and try again."
+              : "JARVIS could not complete the conversation request.";
+        setConversationError(friendly);
+        setResponse(friendly);
+      } finally {
+        setThinking(false);
+      }
+      return;
+    }
+    setCommand("");
+  };
+  return <section className="live-workspace" aria-label="JARVIS live workspace">
+    <div className="live-workspace-head"><div><span className="eyebrow">LIVE WORKSPACE</span><h3>Talk to JARVIS. Work in one place.</h3></div><span className="workspace-state"><span/> WORKSPACE READY</span></div>
+    <div className="workspace-layout">
+      <aside className="workspace-avatar"><div className="avatar-orbit"><div className="avatar-core"><Sparkles size={30}/></div></div><b>JARVIS</b><small>PERSONAL AI ASSISTANT</small><div className="presence-status"><span/> Ready for your command</div><p>{response}</p><div className="voice-controls">
+        <button type="button" onClick={listening ? () => recognitionRef.current?.stop() : startVoiceInput} disabled={thinking}>
+          <Mic size={14}/> {listening ? "Stop listening" : "Speak to JARVIS"}
+        </button>
+        <button type="button" onClick={speakLatest} disabled={thinking}> <AudioLines size={14}/> Speak reply </button>
+      </div>
+      {voiceError && <small className="workspace-notice">{voiceError}</small>}</aside>
+      <div className="workspace-main"><nav className="workspace-tabs" aria-label="Workspace panels">
+        <button className={panel === "home" ? "selected" : ""} onClick={() => openPanel("home")}>Overview</button>
+        <button className={panel === "github" ? "selected" : ""} onClick={() => openPanel("github")}>GitHub</button>
+        <button className={panel === "projects" ? "selected" : ""} onClick={() => openPanel("projects")}>Projects</button>
+        <button className={panel === "calendar" ? "selected" : ""} onClick={() => openPanel("calendar")}>Calendar</button>
+      </nav>
+      <div className="workspace-panel">
+        {panel === "home" && <><div className="workspace-panel-icon"><BrainCircuit size={22}/></div><h4>Your command workspace</h4><p>Open connected tools and keep the assistant conversation beside your work. JARVIS will show connection status honestly and ask before taking consequential actions.</p><div className="workspace-shortcuts"><button onClick={() => openPanel("github")}><Command size={16}/> Open GitHub panel <ChevronRight size={15}/></button><button onClick={() => openPanel("projects")}><FolderKanban size={16}/> View projects <ChevronRight size={15}/></button></div></>}
+        {panel === "github" && <><div className="workspace-panel-icon"><TerminalSquare size={22}/></div><span className="eyebrow">GITHUB WORKSPACE</span><h4>JARVIS source repository</h4><p>Open the active development branch and review commits, pull requests and build checks.</p><a className="workspace-external-link" href="https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/tree/feature/cross-device-foundation" target="_blank" rel="noreferrer">Open JARVIS on GitHub <ChevronRight size={15}/></a><small className="workspace-notice">Read-only GitHub repository status, branches, recent commits and open pull requests are available in the Monitoring panel. Repository writes and merges remain disabled.</small></>}
+        {panel === "projects" && <><div className="workspace-panel-icon"><FolderKanban size={22}/></div><h4>Project management</h4><p>Use the existing Projects section to manage locally stored projects, tasks, decisions, risks and approvals.</p><button className="workspace-action" onClick={onOpenProjects}>Go to Projects <ChevronRight size={15}/></button></>}
+        {panel === "calendar" && <><div className="workspace-panel-icon"><Activity size={22}/></div><h4>Calendar connection</h4><p>No calendar provider is connected yet. Calendar authorisation will be added as a scoped integration.</p><span className="workspace-notice">NOT CONNECTED</span></>}
+      </div></div>
+      {messages.length > 0 && <div className="conversation-thread" aria-live="polite">
+        {messages.map((message, index) => <div className={"conversation-message " + message.role} key={index}>
+          <span>{message.role === "user" ? "YOU" : "JARVIS"}</span><p>{message.content}</p>
+        </div>)}
+        {thinking && <div className="conversation-thinking"><span/> JARVIS is thinking…</div>}
+        {conversationError && <div className="workspace-notice">{conversationError}</div>}
+      </div>}
+    </div>
+    <form className="workspace-command" onSubmit={submit}><Sparkles size={17}/><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Tell JARVIS what you want to open or do…" aria-label="JARVIS command"/><button type="button" className="voice-input-button" onClick={listening ? () => recognitionRef.current?.stop() : startVoiceInput} aria-label={listening ? "Stop microphone" : "Start microphone"} disabled={thinking}><Mic size={15}/></button><button type="submit" disabled={!command.trim() || thinking}>Send <ChevronRight size={15}/></button></form>
+  </section>;
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
@@ -241,10 +444,29 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [active, setActive] = useState("Overview");
-  const [message, setMessage] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectError, setProjectError] = useState("");
+  const [aiProviderStatus, setAiProviderStatus] = useState<AiProviderStatus | null>(null);
+  const [aiProviderKey, setAiProviderKey] = useState("");
+  const [aiProviderModel, setAiProviderModel] = useState("");
+  const [aiProviderEndpoint, setAiProviderEndpoint] = useState("https://api.openai.com/v1/chat/completions");
+  const [aiProviderBusy, setAiProviderBusy] = useState(false);
+  const [aiProviderMessage, setAiProviderMessage] = useState("");
+  const [cloudApiUrl, setCloudApiUrl] = useState("");
+  const [cloudSupabaseUrl, setCloudSupabaseUrl] = useState("");
+  const [cloudPublicKey, setCloudPublicKey] = useState("");
+  const [cloudEmail, setCloudEmail] = useState("");
+  const [cloudPassword, setCloudPassword] = useState("");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus | null>(null);
+  const [cloudSyncBusy, setCloudSyncBusy] = useState(false);
+  const [cloudSyncError, setCloudSyncError] = useState("");
+  const [cloudMemories, setCloudMemories] = useState<CloudMemoryRecord[]>([]);
+  const [cloudMemoryCategory, setCloudMemoryCategory] = useState<CloudMemoryRecord["category"]>("fact");
+  const [cloudMemoryContent, setCloudMemoryContent] = useState("");
+  const [cloudMemorySource, setCloudMemorySource] = useState("");
+  const [cloudMemoryBusy, setCloudMemoryBusy] = useState(false);
+  const [cloudMemoryError, setCloudMemoryError] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -338,6 +560,133 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!authStatus?.authenticated) return;
+    let cancelled = false;
+    invoke<CloudSyncStatus | null>("get_cloud_sync_status")
+      .then(status => { if (!cancelled) setCloudSyncStatus(status); })
+      .catch(() => { if (!cancelled) setCloudSyncStatus(null); });
+    return () => { cancelled = true; };
+  }, [authStatus?.authenticated]);
+
+  const connectCloudAndSync = async (event: FormEvent) => {
+    event.preventDefault();
+    const submittedPassword = cloudPassword;
+    setCloudPassword("");
+    setCloudSyncBusy(true);
+    setCloudSyncError("");
+    try {
+      const status = await invoke<CloudSyncStatus>("connect_cloud_and_sync", {
+        apiUrl: cloudApiUrl,
+        supabaseUrl: cloudSupabaseUrl,
+        publicKey: cloudPublicKey,
+        email: cloudEmail,
+        password: submittedPassword
+      });
+      setCloudSyncStatus(status);
+    } catch (error) {
+      setCloudSyncError(String(error));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  };
+
+  const disconnectCloud = async () => {
+    setCloudSyncBusy(true);
+    setCloudSyncError("");
+    try {
+      await invoke("disconnect_cloud");
+      setCloudSyncStatus(null);
+    } catch (error) {
+      setCloudSyncError(String(error));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  };
+
+  const syncCloudProjects = async () => {
+    setCloudSyncBusy(true);
+    setCloudSyncError("");
+    try {
+      const status = await invoke<CloudSyncStatus>("sync_cloud_projects");
+      setCloudSyncStatus(status);
+    } catch (error) {
+      setCloudSyncError(String(error));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  };
+
+  const refreshCloudMemory = async () => {
+    setCloudMemoryBusy(true);
+    setCloudMemoryError("");
+    try {
+      const entries = await invoke<CloudMemoryRecord[]>("list_cloud_memory");
+      setCloudMemories(entries);
+    } catch (error) {
+      setCloudMemoryError(String(error).includes("cloud_account_not_connected")
+        ? "Connect the shared cloud workspace in Projects first."
+        : "JARVIS could not load shared memory. Check the cloud API connection.");
+    } finally {
+      setCloudMemoryBusy(false);
+    }
+  };
+
+  const submitCloudMemory = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!cloudMemoryContent.trim() || cloudMemoryBusy) return;
+    setCloudMemoryBusy(true);
+    setCloudMemoryError("");
+    try {
+      const entry = await invoke<CloudMemoryRecord>("create_cloud_memory", {
+        category: cloudMemoryCategory,
+        content: cloudMemoryContent.trim(),
+        sourceRef: cloudMemorySource.trim()
+      });
+      setCloudMemories(current => [entry, ...current]);
+      setCloudMemoryContent("");
+      setCloudMemorySource("");
+    } catch (error) {
+      setCloudMemoryError(String(error).includes("cloud_account_not_connected")
+        ? "Connect the shared cloud workspace in Projects first."
+        : "JARVIS could not save this shared memory entry.");
+    } finally {
+      setCloudMemoryBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (active !== "Settings") return;
+    invoke<AiProviderStatus>("get_ai_provider_status")
+      .then(status => {
+        setAiProviderStatus(status);
+        setAiProviderModel(status.model || "");
+        setAiProviderEndpoint(status.endpoint);
+      })
+      .catch(() => setAiProviderMessage("Secure provider settings are unavailable on this device."));
+  }, [active]);
+
+  useEffect(() => {
+    if (active !== "Memory" || !cloudSyncStatus?.connected) return;
+    let cancelled = false;
+    setCloudMemoryBusy(true);
+    setCloudMemoryError("");
+    invoke<CloudMemoryRecord[]>("list_cloud_memory")
+      .then(entries => {
+        if (!cancelled) setCloudMemories(entries);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setCloudMemoryError(String(error).includes("cloud_account_not_connected")
+          ? "Connect the shared cloud workspace in Projects first."
+          : "JARVIS could not load shared memory. Check the cloud API connection.");
+      })
+      .finally(() => {
+        if (!cancelled) setCloudMemoryBusy(false);
+      });
+    return () => { cancelled = true; };
+  }, [active, cloudSyncStatus?.connected]);
+
   const submitOwnerAuth = async (password: string, _confirmation: string) => {
     setAuthBusy(true);
     setAuthError("");
@@ -365,7 +714,6 @@ export default function App() {
       await invoke("logout_owner");
       const owner = await invoke<OwnerAuthStatus>("get_owner_auth_status");
       setAuthStatus(owner);
-      setMessage("");
     } catch (error) {
       setAuthError(readableAuthError(error));
     } finally {
@@ -406,6 +754,17 @@ export default function App() {
     };
   }, [authStatus?.authenticated]);
 
+  const syncCloudQuietly = async () => {
+    if (!cloudSyncStatus?.connected) return;
+    try {
+      const status = await invoke<CloudSyncStatus>("sync_cloud_projects");
+      setCloudSyncStatus(status);
+      setCloudSyncError("");
+    } catch (error) {
+      setCloudSyncError(`Saved locally, but cloud sync needs attention: ${String(error)}`);
+    }
+  };
+
   const changeProjectStatus = async (projectId: string, status: Project["status"]) => {
     setUpdatingProjectId(projectId);
     setProjectError("");
@@ -415,6 +774,7 @@ export default function App() {
         status
       });
       setProjects(current => current.map(item => item.id === updated.id ? updated : item));
+      await syncCloudQuietly();
     } catch (error) {
       const detail = String(error);
       if (detail.includes("owner_session_expired") || detail.includes("owner_session_required")) {
@@ -444,6 +804,7 @@ export default function App() {
         description: projectDescription.trim()
       });
       setProjects(current => [project, ...current.filter(item => item.id !== project.id)]);
+      await syncCloudQuietly();
       setProjectName("");
       setProjectDescription("");
     } catch (error) {
@@ -846,10 +1207,12 @@ export default function App() {
     { label: "Overview", icon: LayoutDashboard },
     { label: "Projects", icon: FolderKanban },
     { label: "AI Workspace", icon: BrainCircuit },
+    { label: "Memory", icon: BrainCircuit },
     { label: "Engineering", icon: TerminalSquare },
     { label: "Security", icon: ShieldCheck },
     { label: "Analytics", icon: Activity },
-    { label: "Monitoring", icon: Radio }
+    { label: "Monitoring", icon: Radio },
+    { label: "Settings", icon: Settings }
   ];
 
   if (!authStatus || !authStatus.authenticated) {
@@ -883,7 +1246,102 @@ export default function App() {
       <div className="content">
         {authError && <div className="dashboard-error">{authError}</div>}
         <div className="welcome-row"><div><div className="eyebrow"><span className="pulse"/> SYSTEM INITIALISING</div><h1>Your workspace.<br/><em>One intelligent system.</em></h1><p className="lead">A unified environment for building, analysing, researching and operating your projects.</p></div><div className="presence-card"><div className="presence-orb"><AudioLines size={27}/></div><div><b>JARVIS presence</b><span>Voice interface is being prepared</span></div><span className="coming">IN DEVELOPMENT</span></div></div>
-        {active === "Monitoring" ? (
+        {active === "Settings" ? (
+          <section className="projects-workspace">
+            <div className="section-heading">
+              <div><span className="eyebrow">PRIVATE CONFIGURATION</span><h2>AI provider settings</h2></div>
+              <span className="tag">{aiProviderStatus?.configured ? "PROVIDER SAVED" : "NOT CONFIGURED"}</span>
+            </div>
+            <p className="monitor-intro">Your API key is saved in Windows Credential Manager. JARVIS never sends it to the webview or stores it in this repository.</p>
+            <article className="panel-card">
+              <div className="panel-title"><div><span className="eyebrow">CONVERSATION ENGINE</span><h3>Connect an AI provider</h3></div><ShieldCheck size={18}/></div>
+              <form className="project-form" onSubmit={async event => {
+                event.preventDefault();
+                setAiProviderBusy(true);
+                setAiProviderMessage("");
+                try {
+                  const status = await invoke<AiProviderStatus>("save_ai_provider_config", {
+                    apiKey: aiProviderKey,
+                    model: aiProviderModel,
+                    endpoint: aiProviderEndpoint
+                  });
+                  setAiProviderStatus(status);
+                  setAiProviderKey("");
+                  setAiProviderMessage("Saved securely. Restart JARVIS to activate the provider connection.");
+                } catch (error) {
+                  setAiProviderMessage(String(error).includes("secure_ai_provider_storage_supported_on_windows_only")
+                    ? "Secure provider storage is currently available on Windows only."
+                    : "JARVIS could not save the provider settings securely.");
+                } finally {
+                  setAiProviderBusy(false);
+                }
+              }}>
+                <label htmlFor="ai-provider-key">API key</label>
+                <input id="ai-provider-key" type="password" autoComplete="off" required minLength={10} maxLength={4096} value={aiProviderKey} onChange={event => setAiProviderKey(event.target.value)} placeholder={aiProviderStatus?.configured ? "Enter a new key to replace the saved key" : "Paste your provider API key"}/>
+                <label htmlFor="ai-provider-model">Model</label>
+                <input id="ai-provider-model" required maxLength={120} value={aiProviderModel} onChange={event => setAiProviderModel(event.target.value)} placeholder="Provider model identifier"/>
+                <label htmlFor="ai-provider-endpoint">HTTPS API endpoint</label>
+                <input id="ai-provider-endpoint" required maxLength={500} type="url" value={aiProviderEndpoint} onChange={event => setAiProviderEndpoint(event.target.value)} placeholder="https://api.openai.com/v1/chat/completions"/>
+                <button className="primary-button" type="submit" disabled={aiProviderBusy || !aiProviderKey.trim() || !aiProviderModel.trim()}>
+                  {aiProviderBusy ? "Saving securely…" : "Save provider settings"}
+                </button>
+              </form>
+              {aiProviderMessage && <div className="workspace-notice">{aiProviderMessage}</div>}
+              {aiProviderStatus?.configured && (
+                <div className="provider-saved-actions">
+                  <p className="monitor-intro">Saved model: {aiProviderStatus.model}. The secret is not displayed again.</p>
+                  <button type="button" className="secondary-button" disabled={aiProviderBusy} onClick={async () => {
+                    setAiProviderBusy(true);
+                    setAiProviderMessage("");
+                    try {
+                      const status = await invoke<AiProviderStatus>("remove_ai_provider_config");
+                      setAiProviderStatus(status);
+                      setAiProviderModel("");
+                      setAiProviderKey("");
+                      setAiProviderMessage("Saved provider credential removed. Restart JARVIS to apply the change.");
+                    } catch {
+                      setAiProviderMessage("JARVIS could not remove the saved provider credential.");
+                    } finally {
+                      setAiProviderBusy(false);
+                    }
+                  }}>Remove saved API key</button>
+                </div>
+              )}
+            </article>
+          </section>
+        ) : active === "Memory" ? (
+          <section className="projects-workspace">
+            <div className="section-heading">
+              <div><span className="eyebrow">SHARED WORKSPACE MEMORY</span><h2>Memory</h2></div>
+              <button className="monitor-refresh" onClick={() => void refreshCloudMemory()} disabled={cloudMemoryBusy}>
+                {cloudMemoryBusy ? "Loading…" : "Refresh memory"}
+              </button>
+            </div>
+            <p className="monitor-intro">These entries are stored in your JARVIS cloud workspace and can be accessed by connected devices using the same account.</p>
+            {!cloudSyncStatus?.connected && <div className="project-error">Connect the shared cloud workspace in Projects before using shared memory.</div>}
+            <article className="panel-card">
+              <div className="panel-title"><div><span className="eyebrow">ADD TO LONG-TERM CONTEXT</span><h3>Save a memory</h3></div><span className="tag">{cloudSyncStatus?.connected ? "CLOUD CONNECTED" : "OFFLINE"}</span></div>
+              <form className="project-form" onSubmit={submitCloudMemory}>
+                <label htmlFor="cloud-memory-category">Category</label>
+                <select id="cloud-memory-category" value={cloudMemoryCategory} onChange={event => setCloudMemoryCategory(event.target.value as CloudMemoryRecord["category"])}>
+                  <option value="fact">Fact</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="note">Note</option><option value="reference">Reference</option>
+                </select>
+                <label htmlFor="cloud-memory-content">Memory</label>
+                <textarea id="cloud-memory-content" required maxLength={10000} rows={4} value={cloudMemoryContent} onChange={event => setCloudMemoryContent(event.target.value)} placeholder="Write a useful fact, preference, decision or note…"/>
+                <label htmlFor="cloud-memory-source">Source reference (optional)</label>
+                <input id="cloud-memory-source" maxLength={2000} value={cloudMemorySource} onChange={event => setCloudMemorySource(event.target.value)} placeholder="Document, project or conversation reference"/>
+                <div className="project-form-footer"><span>Only save information you want available across your connected JARVIS devices.</span><button type="submit" disabled={!cloudSyncStatus?.connected || cloudMemoryBusy || !cloudMemoryContent.trim()}>{cloudMemoryBusy ? "Saving…" : "Save memory"}</button></div>
+              </form>
+            </article>
+            {cloudMemoryError && <div className="project-error">{cloudMemoryError}</div>}
+            <div className="panel-card">
+              <div className="panel-title"><div><span className="eyebrow">CLOUD RECORDS</span><h3>{cloudMemories.length} saved memories</h3></div></div>
+              {cloudMemories.length === 0 ? <div className="projects-empty">No shared memories loaded yet. Refresh to retrieve entries from your workspace.</div> : cloudMemories.map(item => (
+                <div className="activity-line" key={item.id}><span className="activity-dot done"/><div><b>{item.category.toUpperCase()}</b><small>{item.content}</small>{item.source_ref && <small>Source: {item.source_ref}</small>}</div><time>{new Date(item.created_at).toLocaleDateString()}</time></div>
+              ))}
+            </div>
+          </section>
+        ) : active === "Monitoring" ? (
           <section className="monitoring-workspace">
             <div className="section-heading">
               <div><span className="eyebrow">READ-ONLY CONNECTED SERVICES</span><h2>Monitoring centre</h2></div>
@@ -895,17 +1353,27 @@ export default function App() {
             <div className="monitor-provider-grid">
               {(monitoring?.providers ?? [
                 { provider: "vercel", status: "not_configured" as const },
-                { provider: "supabase", status: "not_configured" as const }
+                { provider: "supabase", status: "not_configured" as const },
+                { provider: "github", status: "not_configured" as const }
               ]).map(provider => (
                 <article className="panel-card monitor-provider" key={provider.provider}>
-                  <div className="panel-title"><div><span className="eyebrow">PROVIDER</span><h3>{provider.provider === "vercel" ? "Vercel" : "Supabase"}</h3></div><span className={`monitor-state ${provider.status}`}>{provider.status.replace("_", " ")}</span></div>
+                  <div className="panel-title"><div><span className="eyebrow">PROVIDER</span><h3>{provider.provider === "vercel" ? "Vercel" : provider.provider === "supabase" ? "Supabase" : "GitHub"}</h3></div><span className={`monitor-state ${provider.status}`}>{provider.status.replace("_", " ")}</span></div>
                   {provider.provider === "vercel" ? (
                     <div className="monitor-items">
                       {(provider.deployments ?? []).length ? provider.deployments!.map(item => <div className="monitor-item" key={item.id}><b>{item.name || item.url || "Deployment"}</b><span>{item.state} · {item.target || "environment not specified"}</span></div>) : <p className="muted">{provider.status === "not_configured" ? "Add a read-only VERCEL_TOKEN to the local gateway to inspect deployments." : provider.detail || "No deployments returned."}</p>}
                     </div>
-                  ) : (
+                  ) : provider.provider === "supabase" ? (
                     <div className="monitor-items">
                       {(provider.projects ?? []).length ? provider.projects!.map(item => <div className="monitor-item" key={item.ref}><b>{item.name}</b><span>{item.status} · {item.region}</span></div>) : <p className="muted">{provider.status === "not_configured" ? "Add a scoped read-only SUPABASE_ACCESS_TOKEN to inspect projects." : provider.detail || "No projects returned."}</p>}
+                    </div>
+                  ) : (
+                    <div className="monitor-items">
+                      {provider.repository && <div className="monitor-item"><b>{provider.repository}</b><span>Default branch: {provider.default_branch || "unknown"}</span></div>}
+                      {(provider.branches ?? []).map(item => <div className="monitor-item" key={item.name}><b>{item.name}</b><span>{item.protected ? "Protected branch" : "Branch"}</span></div>)}
+                      {(provider.recent_commits ?? []).map(item => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={item.sha}><b>{item.message || item.sha}</b><span>{item.author} · {item.sha}</span></a>)}
+                      {(provider.open_pull_requests ?? []).map(item => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={item.number}><b>#{item.number} {item.title}</b><span>{item.head} → {item.base}</span></a>)}
+                      {(provider.workflow_runs ?? []).map((item, index) => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={`${item.name}-${item.updated_at}-${index}`}><b>{item.name}: {item.conclusion || item.status}</b><span>{item.branch} · {item.status}</span></a>)}
+                      {provider.status !== "connected" && <p className="muted">{provider.detail || "GitHub repository monitoring is unavailable."}</p>}
                     </div>
                   )}
                 </article>
@@ -922,6 +1390,48 @@ export default function App() {
               </div>
               <span className="muted">{projects.length} saved {projects.length === 1 ? "project" : "projects"}</span>
             </div>
+            <article className="panel-card cloud-sync-card">
+              <div className="panel-title">
+                <div><span className="eyebrow">CROSS-DEVICE WORKSPACE</span><h3>Connect your phone and Windows app</h3></div>
+                <span className="tag">{cloudSyncStatus?.connected ? "CONNECTED" : "NOT CONNECTED"}</span>
+              </div>
+              <p className="panel-copy">
+                Sign in with the same Supabase account configured in JARVIS Mobile. Your local desktop projects will be copied into the shared cloud workspace.
+              </p>
+              {cloudSyncStatus?.connected ? (
+                <div className="cloud-sync-summary">
+                  <b>{cloudSyncStatus.workspace_name}</b>
+                  <span>{cloudSyncStatus.synced_projects} local projects synced to the shared workspace.</span>
+                  <button type="button" disabled={cloudSyncBusy} onClick={syncCloudProjects}>
+                    <Radio size={15}/>{cloudSyncBusy ? "Syncing…" : "Sync projects now"}
+                  </button>
+                  <button type="button" disabled={cloudSyncBusy} onClick={disconnectCloud}>
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <form className="project-form" onSubmit={connectCloudAndSync}>
+                  <label htmlFor="cloud-api-url">JARVIS Cloud API HTTPS URL</label>
+                  <input id="cloud-api-url" type="url" required value={cloudApiUrl} onChange={event => setCloudApiUrl(event.target.value)} placeholder="https://your-jarvis-api.example.com"/>
+                  <label htmlFor="cloud-supabase-url">Supabase project HTTPS URL</label>
+                  <input id="cloud-supabase-url" type="url" required value={cloudSupabaseUrl} onChange={event => setCloudSupabaseUrl(event.target.value)} placeholder="https://your-project.supabase.co"/>
+                  <label htmlFor="cloud-public-key">Supabase publishable / anon public key</label>
+                  <input id="cloud-public-key" type="password" required value={cloudPublicKey} onChange={event => setCloudPublicKey(event.target.value)} autoComplete="off"/>
+                  <label htmlFor="cloud-email">Account email</label>
+                  <input id="cloud-email" type="email" required value={cloudEmail} onChange={event => setCloudEmail(event.target.value)} autoComplete="username"/>
+                  <label htmlFor="cloud-password">Account password</label>
+                  <input id="cloud-password" type="password" required value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} autoComplete="current-password"/>
+                  <div className="project-form-footer">
+                    <span>The password is cleared from this form after submission. The cloud session stays in native memory for this app run and must be reconnected after restarting Windows JARVIS.</span>
+                    <button type="submit" disabled={cloudSyncBusy}>
+                      <ShieldCheck size={15}/>{cloudSyncBusy ? "Connecting…" : "Connect and sync"}
+                    </button>
+                  </div>
+                </form>
+              )}
+              {cloudSyncError && <div className="project-error">{cloudSyncError}</div>}
+              <p className="panel-copy">Use only the Supabase public client key here. Never enter a service-role or secret key. The first connection syncs project records only; tasks and other project history are not yet included.</p>
+            </article>
             <div className="projects-layout">
               <article className="panel-card project-create-card">
                 <div className="panel-title">
@@ -1231,7 +1741,11 @@ export default function App() {
                                       )}
                                       {item.status === "approved" && item.action === "project.task.create" && (
                                         <div className="approval-actions">
-                                          <button type="button" disabled={approvalBusyId === item.id} onClick={() => void executeApprovedTask(project.id, item)}>{approvalBusyId === item.id ? "Executing…" : "Execute approved task"}</button>
+                                          {item.execution_available ? (
+                                            <button type="button" disabled={approvalBusyId === item.id} onClick={() => void executeApprovedTask(project.id, item)}>{approvalBusyId === item.id ? "Executing…" : "Execute approved task"}</button>
+                                          ) : (
+                                            <span className="muted">This approval was created in another session or its one-time credential expired. Create a new approval request.</span>
+                                          )}
                                         </div>
                                       )}
                                     </details>
@@ -1321,8 +1835,8 @@ export default function App() {
               <article className="metric-card"><div className="metric-icon green"><ShieldCheck size={18}/></div><span>SECURITY</span><strong>{capabilities?.security.gateway_session_configured ? "Session protected" : capabilitiesError ? "Bridge unavailable" : "Checking session"}</strong><small>{capabilities?.security.owner_session_authenticated ? "Owner session verified" : "Local owner account configured"}</small></article>
               <article className="metric-card"><div className="metric-icon amber"><Radio size={18}/></div><span>MONITORING</span><strong>Not connected</strong><small>No background checks yet</small></article>
             </div>
-            <div className="lower-grid"><article className="panel-card"><div className="panel-title"><div><span className="eyebrow">COMMAND INTERFACE</span><h3>What are we working on?</h3></div><span className="tag">TEXT MODE</span></div><p className="panel-copy">Owner authentication and local project storage are active. Task execution and specialist agents are not connected yet.</p><div className="composer"><input value={message} onChange={e => setMessage(e.target.value)} placeholder="Describe a task…" aria-label="Task description" /><button disabled={!message.trim()} onClick={() => setMessage("")}><Sparkles size={16}/> Clear draft</button></div><div className="hint"><Mic size={14}/> Voice input will be enabled after realtime session and permission controls are implemented.</div></article>
-            <article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
+            <LiveWorkspace onOpenProjects={() => setActive("Projects")}/>
+            <div className="lower-grid"><article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
           </>
         )}
         <footer><span>JARVIS · PRIVATE AI OPERATING ENVIRONMENT</span><span><MonitorUp size={13}/> Desktop build · Early foundation</span></footer>

@@ -1,3 +1,50 @@
+## Cloud database policy hardening (Nov 15, 2026)
+
+- Removed SECURITY DEFINER membership/bootstrap helpers from the cloud schema migrations.
+- Replaced them with direct, table-qualified membership EXISTS predicates under RLS. Workspace owners can read their own initial workspace to complete first-membership bootstrap; workspace members are scoped to their own membership row.
+- Revoked PUBLIC execute on the transaction-local current-user helper and granted it only to the dedicated API runtime role.
+- The migration set now requires creating the NOBYPASSRLS `jarvis_api` role first, then applying migrations 0001, 0002 and 0003 in order.
+- No live Supabase/PostgreSQL instance is connected yet, so database execution and Supabase advisors remain unverified.
+
+## Windows desktop cloud connection and initial project sync (Nov 15, 2026)
+
+- Added native Tauri cloud sign-in using the same Supabase Auth email/password account as mobile.
+- Added native-only cloud session storage in process memory; access/refresh tokens are zeroized on replacement, disconnect, owner logout and application exit. The session is not persisted between desktop launches yet, so the owner reconnects after restarting the app.
+- Added Windows device registration/heartbeat in the cloud workspace.
+- Added an idempotent first sync of local desktop project records into the shared cloud workspace, keyed by the immutable local project ID.
+- Added a Projects-page cloud connection panel with explicit Connect, Sync now and Disconnect controls.
+- Current sync scope is project metadata only (name, description, status). New project creation and project status changes trigger a sync while the desktop cloud session is connected; a manual Sync now action is also available. There is no periodic/background sync. Tasks, decisions, milestones, risks, memory and audit history are not yet synchronised.
+- Rust/Tauri/React changes have not yet been compiled or run through CI. Do not treat this as a verified desktop release. Cloud service/database configuration is also still outstanding.
+
+## Desktop-to-cloud project sync API (Nov 15, 2026)
+
+- Added `POST /v1/projects/sync` to upsert desktop projects into the shared workspace using a stable local-project identifier. Repeated sync calls update the same cloud row rather than creating duplicates.
+- Added a migration for the stable local ID and workspace-member write policy. Workspace viewers remain read-only; owner/admin/member roles can sync project records.
+- Added authenticated device heartbeat endpoint; the mobile app sends a heartbeat when it starts and when a device is already registered.
+- Added authentication-boundary tests for project sync and device heartbeat.
+- This API is ready for the next native Windows integration slice, but the Windows desktop app has not yet been connected to cloud sign-in or project sync.
+
+## Mobile authentication and workspace integration (Nov 15, 2026)
+
+- Added Supabase Auth email/password sign-in and account creation to the Flutter app.
+- Added secure access/refresh token persistence and refresh-token rotation; failed refresh clears the local session.
+- Added authenticated mobile API client for workspace discovery/creation, device registration/list/revocation, workspace overview, project listing and monitoring alerts.
+- The mobile dashboard now reads live API responses instead of placeholder project/alert counts. Empty states are explicit when no records exist.
+- Added per-workspace device registration tracking and a device list with revoke controls.
+- Updated mobile setup documentation. The app requires the deployed cloud API URL, Supabase project URL and public publishable/anon key. A service-role key must never be placed in the app.
+- These are source changes only. No Supabase project or cloud database has been configured; no production cloud API is deployed. Android/iOS CI and physical-device installation have not yet been verified.
+- Still outstanding: Windows desktop cloud identity/sync, push notifications, scheduled cloud monitoring workers, live updates, approvals, voice, offline sync, and production deployment hardening.
+
+## Cross-device cloud API foundation (Nov 15, 2026)
+
+- Added a separate `services/cloud-api` FastAPI service; it does not reuse or expose the Windows loopback gateway.
+- Added Supabase Auth asymmetric JWT verification (JWKS, issuer, audience, expiry and UUID subject checks).
+- Added PostgreSQL migrations for workspaces, memberships, registered devices, projects and monitoring alerts, with RLS enabled and transaction-local user identity derived only from the verified token.
+- Added owner workspace bootstrap, device registration/list/revocation, workspace overview, project listing and monitoring-alert read endpoints.
+- Added cloud API lint/test workflow and basic unauthenticated-route tests.
+- Not yet verified by CI at this update. No cloud database, Supabase Auth project, production runtime role, hosting environment, or secrets have been configured. The service is source code only and is not deployed.
+- Not yet implemented: mobile login/token refresh integration, device push tokens, notification delivery, background cloud monitoring workers, approval endpoints, live event stream, cloud sync writes, workspace invitation/membership management, backups or production observability.
+
 ## Read-only provider adapters (Nov 15, 2026)
 
 - Added fixed-endpoint Vercel deployment and Supabase project-list adapters.

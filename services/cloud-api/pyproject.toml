@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-cloud-api"
+version = "0.1.0"
+description = "HTTPS cloud API for authenticated JARVIS clients"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.34,<1.0",
+  "psycopg[binary,pool]>=3.2,<4.0",
+  "PyJWT[crypto]>=2.10,<3.0"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9.0", "httpx>=0.28,<1.0", "ruff>=0.9,<1.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# FastAPI Query defaults are intentional dependency declarations; keep the
+# database transaction context nested for explicit transaction scope.
+ignore = ["B008", "SIM117"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["tests*", "migrations*"]
