@@ -115,6 +115,7 @@ type ProjectApproval = {
   arguments_hash: string; requester: string;
   status: "pending" | "approved" | "denied" | "consumed" | "expired";
   created_at: number; expires_at: number; decided_at: number | null; consumed_at: number | null;
+  execution_available: boolean;
 };
 
 type ProjectMilestone = {
@@ -1740,7 +1741,11 @@ export default function App() {
                                       )}
                                       {item.status === "approved" && item.action === "project.task.create" && (
                                         <div className="approval-actions">
-                                          <button type="button" disabled={approvalBusyId === item.id} onClick={() => void executeApprovedTask(project.id, item)}>{approvalBusyId === item.id ? "Executing…" : "Execute approved task"}</button>
+                                          {item.execution_available ? (
+                                            <button type="button" disabled={approvalBusyId === item.id} onClick={() => void executeApprovedTask(project.id, item)}>{approvalBusyId === item.id ? "Executing…" : "Execute approved task"}</button>
+                                          ) : (
+                                            <span className="muted">This approval was created in another session or its one-time credential expired. Create a new approval request.</span>
+                                          )}
                                         </div>
                                       )}
                                     </details>
