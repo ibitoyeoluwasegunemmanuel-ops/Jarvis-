@@ -42,6 +42,10 @@ type OwnerAuthStatus = {
   setup_required: boolean;
   authenticated: boolean;
 };
+type CloudMemoryRecord = {
+  id: string; workspace_id: string; category: "preference" | "fact" | "decision" | "note" | "reference";
+  content: string; source_ref: string; created_at: number;
+};
 type CloudSyncStatus = {
   connected: boolean;
   workspace_id: string;
@@ -324,6 +328,12 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus | null>(null);
   const [cloudSyncBusy, setCloudSyncBusy] = useState(false);
   const [cloudSyncError, setCloudSyncError] = useState("");
+  const [cloudMemories, setCloudMemories] = useState<CloudMemoryRecord[]>([]);
+  const [cloudMemoryCategory, setCloudMemoryCategory] = useState<CloudMemoryRecord["category"]>("fact");
+  const [cloudMemoryContent, setCloudMemoryContent] = useState("");
+  const [cloudMemorySource, setCloudMemorySource] = useState("");
+  const [cloudMemoryBusy, setCloudMemoryBusy] = useState(false);
+  const [cloudMemoryError, setCloudMemoryError] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -471,6 +481,44 @@ export default function App() {
       setCloudSyncError(String(error));
     } finally {
       setCloudSyncBusy(false);
+    }
+  };
+
+  const refreshCloudMemory = async () => {
+    setCloudMemoryBusy(true);
+    setCloudMemoryError("");
+    try {
+      const entries = await invoke<CloudMemoryRecord[]>("list_cloud_memory");
+      setCloudMemories(entries);
+    } catch (error) {
+      setCloudMemoryError(String(error).includes("cloud_account_not_connected")
+        ? "Connect the shared cloud workspace in Projects first."
+        : "JARVIS could not load shared memory. Check the cloud API connection.");
+    } finally {
+      setCloudMemoryBusy(false);
+    }
+  };
+
+  const submitCloudMemory = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!cloudMemoryContent.trim() || cloudMemoryBusy) return;
+    setCloudMemoryBusy(true);
+    setCloudMemoryError("");
+    try {
+      const entry = await invoke<CloudMemoryRecord>("create_cloud_memory", {
+        category: cloudMemoryCategory,
+        content: cloudMemoryContent.trim(),
+        sourceRef: cloudMemorySource.trim()
+      });
+      setCloudMemories(current => [entry, ...current]);
+      setCloudMemoryContent("");
+      setCloudMemorySource("");
+    } catch (error) {
+      setCloudMemoryError(String(error).includes("cloud_account_not_connected")
+        ? "Connect the shared cloud workspace in Projects first."
+        : "JARVIS could not save this shared memory entry.");
+    } finally {
+      setCloudMemoryBusy(false);
     }
   };
 
@@ -994,6 +1042,7 @@ export default function App() {
     { label: "Overview", icon: LayoutDashboard },
     { label: "Projects", icon: FolderKanban },
     { label: "AI Workspace", icon: BrainCircuit },
+    { label: "Memory", icon: BrainCircuit },
     { label: "Engineering", icon: TerminalSquare },
     { label: "Security", icon: ShieldCheck },
     { label: "Analytics", icon: Activity },
@@ -1031,7 +1080,39 @@ export default function App() {
       <div className="content">
         {authError && <div className="dashboard-error">{authError}</div>}
         <div className="welcome-row"><div><div className="eyebrow"><span className="pulse"/> SYSTEM INITIALISING</div><h1>Your workspace.<br/><em>One intelligent system.</em></h1><p className="lead">A unified environment for building, analysing, researching and operating your projects.</p></div><div className="presence-card"><div className="presence-orb"><AudioLines size={27}/></div><div><b>JARVIS presence</b><span>Voice interface is being prepared</span></div><span className="coming">IN DEVELOPMENT</span></div></div>
-        {active === "Monitoring" ? (
+        {active === "Memory" ? (
+          <section className="projects-workspace">
+            <div className="section-heading">
+              <div><span className="eyebrow">SHARED WORKSPACE MEMORY</span><h2>Memory</h2></div>
+              <button className="monitor-refresh" onClick={() => void refreshCloudMemory()} disabled={cloudMemoryBusy}>
+                {cloudMemoryBusy ? "Loading…" : "Refresh memory"}
+              </button>
+            </div>
+            <p className="monitor-intro">These entries are stored in your JARVIS cloud workspace and can be accessed by connected devices using the same account.</p>
+            {!cloudSyncStatus?.connected && <div className="project-error">Connect the shared cloud workspace in Projects before using shared memory.</div>}
+            <article className="panel-card">
+              <div className="panel-title"><div><span className="eyebrow">ADD TO LONG-TERM CONTEXT</span><h3>Save a memory</h3></div><span className="tag">{cloudSyncStatus?.connected ? "CLOUD CONNECTED" : "OFFLINE"}</span></div>
+              <form className="project-form" onSubmit={submitCloudMemory}>
+                <label htmlFor="cloud-memory-category">Category</label>
+                <select id="cloud-memory-category" value={cloudMemoryCategory} onChange={event => setCloudMemoryCategory(event.target.value as CloudMemoryRecord["category"])}>
+                  <option value="fact">Fact</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="note">Note</option><option value="reference">Reference</option>
+                </select>
+                <label htmlFor="cloud-memory-content">Memory</label>
+                <textarea id="cloud-memory-content" required maxLength={10000} rows={4} value={cloudMemoryContent} onChange={event => setCloudMemoryContent(event.target.value)} placeholder="Write a useful fact, preference, decision or note…"/>
+                <label htmlFor="cloud-memory-source">Source reference (optional)</label>
+                <input id="cloud-memory-source" maxLength={2000} value={cloudMemorySource} onChange={event => setCloudMemorySource(event.target.value)} placeholder="Document, project or conversation reference"/>
+                <div className="project-form-footer"><span>Only save information you want available across your connected JARVIS devices.</span><button type="submit" disabled={!cloudSyncStatus?.connected || cloudMemoryBusy || !cloudMemoryContent.trim()}>{cloudMemoryBusy ? "Saving…" : "Save memory"}</button></div>
+              </form>
+            </article>
+            {cloudMemoryError && <div className="project-error">{cloudMemoryError}</div>}
+            <div className="panel-card">
+              <div className="panel-title"><div><span className="eyebrow">CLOUD RECORDS</span><h3>{cloudMemories.length} saved memories</h3></div></div>
+              {cloudMemories.length === 0 ? <div className="projects-empty">No shared memories loaded yet. Refresh to retrieve entries from your workspace.</div> : cloudMemories.map(item => (
+                <div className="activity-line" key={item.id}><span className="activity-dot done"/><div><b>{item.category.toUpperCase()}</b><small>{item.content}</small>{item.source_ref && <small>Source: {item.source_ref}</small>}</div><time>{new Date(item.created_at * 1000).toLocaleDateString()}</time></div>
+              ))}
+            </div>
+          </section>
+        ) : active === "Monitoring" ? (
           <section className="monitoring-workspace">
             <div className="section-heading">
               <div><span className="eyebrow">READ-ONLY CONNECTED SERVICES</span><h2>Monitoring centre</h2></div>
