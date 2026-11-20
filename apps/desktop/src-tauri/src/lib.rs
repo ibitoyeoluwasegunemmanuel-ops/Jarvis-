@@ -83,7 +83,7 @@ struct CloudMemoryRecord {
     category: String,
     content: String,
     source_ref: String,
-    created_at: f64,
+    created_at: String,
 }
 
 #[derive(Serialize)]
