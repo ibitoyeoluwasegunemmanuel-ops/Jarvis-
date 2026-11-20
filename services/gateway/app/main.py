@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.approval_routes import router as approval_router
+from app.conversation_routes import router as conversation_router
+from app.conversation_service import provider_is_configured
 from app.execution_routes import router as execution_router
 from app.monitoring_routes import router as monitoring_router
 from app.owner_auth import (
@@ -54,6 +56,7 @@ app = FastAPI(
 )
 
 app.include_router(approval_router)
+app.include_router(conversation_router)
 app.include_router(execution_router)
 app.include_router(monitoring_router)
 
@@ -119,6 +122,7 @@ async def capabilities(request: Request) -> dict[str, object]:
             "gateway_session_authentication": True,
             "project_persistence": True,
             "agent_execution": False,
+            "conversational_ai": provider_is_configured(),
             "computer_use": False,
             "voice": False,
             "persistent_memory": True,
