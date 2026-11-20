@@ -1983,38 +1983,35 @@ pub fn run() {
         .setup(|app| {
             let token = new_session_token();
             let provider = read_ai_provider_config();
-            let mut sidecar = app.shell().sidecar("jarvis-gateway")
-                .map_err(|error| format!("gateway_sidecar_unavailable: {error}"))?
-                .args(["--host", "127.0.0.1", "--port", "8765"])
-                .env("JARVIS_SESSION_TOKEN", token.clone());
-            if let Some(config) = provider.as_ref() {
-                sidecar = sidecar
-                    .env("JARVIS_AI_API_KEY", config.api_key.clone())
-                    .env("JARVIS_AI_MODEL", config.model.clone())
-                    .env("JARVIS_AI_ENDPOINT", config.endpoint.clone());
-            }
-            let child = match sidecar
-                Ok(command) => match command
-                    .set_process_group(true)
-                    .kill_on_drop(true)
-                    .spawn()
-                {
-                    Ok((mut events, child)) => {
-                        // Drain process output without forwarding it to the webview.
-                        tauri::async_runtime::spawn(async move {
-                            while let Some(event) = events.recv().await {
-                                if matches!(event, CommandEvent::Terminated(_)) {
-                                    break;
+            let child = match app.shell().sidecar("jarvis-gateway") {
+                Ok(command) => {
+                    let mut command = command
+                        .args(["--host", "127.0.0.1", "--port", "8765"])
+                        .env("JARVIS_SESSION_TOKEN", token.clone());
+                    if let Some(config) = provider.as_ref() {
+                        command = command
+                            .env("JARVIS_AI_API_KEY", config.api_key.clone())
+                            .env("JARVIS_AI_MODEL", config.model.clone())
+                            .env("JARVIS_AI_ENDPOINT", config.endpoint.clone());
+                    }
+                    match command.set_process_group(true).kill_on_drop(true).spawn() {
+                        Ok((mut events, child)) => {
+                            // Drain process output without forwarding it to the webview.
+                            tauri::async_runtime::spawn(async move {
+                                while let Some(event) = events.recv().await {
+                                    if matches!(event, CommandEvent::Terminated(_)) {
+                                        break;
+                                    }
                                 }
-                            }
-                        });
-                        Some(child)
+                            });
+                            Some(child)
+                        }
+                        Err(error) => {
+                            eprintln!("JARVIS gateway sidecar failed to start: {error}");
+                            None
+                        }
                     }
-                    Err(error) => {
-                        eprintln!("JARVIS gateway sidecar failed to start: {error}");
-                        None
-                    }
-                },
+                }
                 Err(error) => {
                     eprintln!("JARVIS gateway sidecar is unavailable: {error}");
                     None
