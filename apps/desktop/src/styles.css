@@ -230,3 +230,13 @@
 .workspace-command button{display:flex;align-items:center;gap:5px;border:0;border-radius:6px;background:#7962d8;color:white;padding:8px 11px;font-size:9px;cursor:pointer}
 .workspace-command button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:680px){.live-workspace{padding:14px}.workspace-layout{grid-template-columns:1fr}.workspace-avatar{padding:15px}.avatar-orbit{width:64px;height:64px}.avatar-core{width:48px;height:48px}.workspace-panel{min-height:190px}.live-workspace-head{align-items:flex-start;flex-direction:column}}
+
+
+.conversation-thread{display:flex;flex-direction:column;gap:9px;padding:12px 16px 16px;border-top:1px solid #ffffff12;max-height:310px;overflow-y:auto}
+.conversation-message{max-width:88%;padding:9px 11px;border:1px solid #ffffff14;border-radius:9px;background:#121a2a}
+.conversation-message.user{align-self:flex-end;background:#252044;border-color:#9b87ff35}
+.conversation-message.assistant{align-self:flex-start}
+.conversation-message>span{display:block;font:8px 'DM Mono',monospace;letter-spacing:.8px;color:#a99aff;margin-bottom:5px}
+.conversation-message p{font-size:10px;line-height:1.65;color:#d8dced;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.conversation-thinking{display:flex;align-items:center;gap:8px;color:#9c91ce;font-size:9px;padding:5px}
+.conversation-thinking span{width:6px;height:6px;border-radius:50%;background:#a99aff;box-shadow:0 0 10px #a99aff}
