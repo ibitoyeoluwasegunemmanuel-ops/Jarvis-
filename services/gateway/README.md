@@ -30,6 +30,20 @@ All other routes, including /v1/*, /docs, and /openapi.json, require the X-Jarvi
 - The webview currently checks only the public health endpoint. A native authenticated request bridge for protected routes is still needed.
 - Windows CI builds the gateway sidecar with PyInstaller and packages it with the app; the full NSIS installer path is under validation.
 
+## Conversational AI runtime
+
+The authenticated local endpoint `POST /v1/conversation/reply` now provides a provider-neutral Chat Completions adapter. It accepts up to 20 recent user/assistant messages and returns one assistant message. System messages and caller-supplied credentials are rejected.
+
+Configure the gateway process with:
+
+- `JARVIS_AI_API_KEY`: provider API key (kept in the gateway process environment; never send it from the webview).
+- `JARVIS_AI_MODEL`: model identifier supported by the selected provider.
+- `JARVIS_AI_ENDPOINT`: optional HTTPS Chat Completions endpoint. Defaults to the OpenAI-compatible endpoint `https://api.openai.com/v1/chat/completions`.
+
+The endpoint requires both the gateway process token and the local owner session. Provider errors are sanitized, outbound requests have a 45-second timeout, and non-HTTPS provider endpoints are rejected. No provider credential is committed to this repository.
+
+**Important:** the provider adapter is implemented in the gateway, but the Windows conversation UI/native bridge and voice input/output are not connected yet. There is currently no in-app provider settings screen. The adapter will return a clear not-configured response until the gateway process receives the required environment variables.
+
 ## Security foundation
 
 - The gateway session token is a local process secret, not the user's permanent identity and not proof of workspace membership.
