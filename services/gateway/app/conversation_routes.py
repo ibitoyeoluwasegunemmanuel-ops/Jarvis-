@@ -11,6 +11,7 @@ from app.conversation_service import (
     create_assistant_reply,
 )
 from app.conversation_store import list_conversation_history, save_conversation_turn
+from app.conversation_memory import retrieve_project_memory
 
 router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
 
@@ -38,8 +39,11 @@ def conversation_history() -> list[dict[str, object]]:
 def conversation_reply(payload: ConversationRequest) -> dict[str, str]:
     """Generate one assistant reply for the authenticated local owner."""
     try:
+        latest_user_message = payload.messages[-1].content
+        memory_context = retrieve_project_memory(latest_user_message)
         reply = create_assistant_reply(
-            [message.model_dump() for message in payload.messages]
+            [message.model_dump() for message in payload.messages],
+            memory_context=memory_context,
         )
         save_conversation_turn(payload.messages[-1].content, reply["content"])
         return reply
