@@ -1264,7 +1264,26 @@ export default function App() {
                 </button>
               </form>
               {aiProviderMessage && <div className="workspace-notice">{aiProviderMessage}</div>}
-              {aiProviderStatus?.configured && <p className="monitor-intro">Saved model: {aiProviderStatus.model}. The secret is not displayed again.</p>}
+              {aiProviderStatus?.configured && (
+                <div className="provider-saved-actions">
+                  <p className="monitor-intro">Saved model: {aiProviderStatus.model}. The secret is not displayed again.</p>
+                  <button type="button" className="secondary-button" disabled={aiProviderBusy} onClick={async () => {
+                    setAiProviderBusy(true);
+                    setAiProviderMessage("");
+                    try {
+                      const status = await invoke<AiProviderStatus>("remove_ai_provider_config");
+                      setAiProviderStatus(status);
+                      setAiProviderModel("");
+                      setAiProviderKey("");
+                      setAiProviderMessage("Saved provider credential removed. Restart JARVIS to apply the change.");
+                    } catch {
+                      setAiProviderMessage("JARVIS could not remove the saved provider credential.");
+                    } finally {
+                      setAiProviderBusy(false);
+                    }
+                  }}>Remove saved API key</button>
+                </div>
+              )}
             </article>
           </section>
         ) : active === "Memory" ? (
