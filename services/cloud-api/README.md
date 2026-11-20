@@ -42,7 +42,7 @@ CREATE ROLE jarvis_api LOGIN NOBYPASSRLS;
 
 Then apply `migrations/0001_cloud_identity_devices.sql`,
 `migrations/0002_workspace_bootstrap.sql`, and
-`migrations/0003_project_sync.sql`, and `migrations/0004_workspace_memory.sql` in order with the migration-owner role. The
+`migrations/0003_project_sync.sql`, and `migrations/0004_workspace_memory.sql`, and `migrations/0005_harden_workspace_policies.sql` in order with the migration-owner role. The
 runtime role must not own the schema or protected tables. The migrations grant
 only the operations needed by this first API slice.
 
