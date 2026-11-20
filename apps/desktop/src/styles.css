@@ -246,3 +246,10 @@
 .project-form select:focus{border-color:#9180e7;box-shadow:0 0 0 3px #8d75ff18}
 .project-form>button.primary-button{justify-self:start;border:0;border-radius:7px;background:#7962d8;color:white;padding:10px 14px;font-size:10px;font-weight:600;cursor:pointer}
 .project-form>button.primary-button:disabled{opacity:.45;cursor:not-allowed}
+
+
+.voice-controls{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
+.voice-controls button,.voice-input-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #9a86ff35;background:#8b75ff12;color:#c7bcff;border-radius:7px;padding:8px 10px;font-size:9px;cursor:pointer}
+.voice-controls button:hover,.voice-input-button:hover{border-color:#b3a4ff;background:#8b75ff22}
+.voice-controls button:disabled,.voice-input-button:disabled{opacity:.45;cursor:not-allowed}
+.voice-input-button{padding:8px 9px;flex:0 0 auto}
