@@ -255,7 +255,27 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
     event.preventDefault();
     const value = command.trim();
     if (!value) return;
-    setResponse("Request received: “" + value + "”. The conversational AI runtime is not connected yet, so I have not executed this request. You can open one of the available workspace panels above.");
+    const normalized = value.toLowerCase().replace(/[.!?]/g, " ");
+    const requestedPanel: WorkspacePanel | null =
+      /\\b(github|git hub|repository|repo)\\b/.test(normalized) ? "github" :
+      /\\b(projects?|tasks?)\\b/.test(normalized) ? "projects" :
+      /\\b(calendar|schedule|events?)\\b/.test(normalized) ? "calendar" :
+      /\\b(home|overview|dashboard)\\b/.test(normalized) ? "home" : null;
+    if (requestedPanel) {
+      openPanel(requestedPanel);
+      if (requestedPanel === "projects") onOpenProjects();
+      setResponse(
+        requestedPanel === "github"
+          ? "Opening your JARVIS GitHub workspace. Use the repository link in the panel to open GitHub."
+          : requestedPanel === "projects"
+            ? "Opening your Projects section."
+            : requestedPanel === "calendar"
+              ? "Showing the calendar panel. No calendar account is connected yet."
+              : "Showing your JARVIS overview."
+      );
+    } else {
+      setResponse("I received: “" + value + "”. I can currently open the GitHub, Projects, Calendar and Overview panels. The AI reasoning and action engine is not connected yet, so I have not performed any other action.");
+    }
     setCommand("");
   };
   return <section className="live-workspace" aria-label="JARVIS live workspace">
