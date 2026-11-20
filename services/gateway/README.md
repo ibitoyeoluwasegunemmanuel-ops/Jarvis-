@@ -32,6 +32,8 @@ All other routes, including /v1/*, /docs, and /openapi.json, require the X-Jarvi
 
 ## Conversational AI runtime
 
+The owner-authenticated read-only endpoint `GET /v1/monitoring/providers/overview` includes Vercel, Supabase, and GitHub summaries. GitHub data is fetched from fixed GitHub API endpoints; caller-supplied URLs are not accepted. Configure `GITHUB_TOKEN` only when authenticated access or higher rate limits are required.
+
 The authenticated local endpoints `POST /v1/conversation/reply` and `GET /v1/conversation/history` provide a provider-neutral Chat Completions adapter with persistent conversation continuity. Completed user/assistant turns are stored in the local owner-authenticated SQLite database, and the desktop app restores the recent history after restart. The store retains at most 100 messages and the history endpoint returns the most recent 40 by default. System messages and caller-supplied credentials are rejected. Relevant owner-scoped project memory is retrieved from the local project memory store and added as bounded, explicitly untrusted reference context for each reply. Retrieval uses keyword overlap against the latest user message and returns at most six snippets. Conversation history and project memory remain local to this Windows installation; neither is yet synchronised to mobile or cloud.
 
 On Windows, configure the provider from **Settings → AI provider settings** in the desktop app. The API key is stored in Windows Credential Manager and is injected into the private gateway sidecar at startup. Restart JARVIS after saving a new provider configuration. The environment variables below remain available for development and other supported deployments:
