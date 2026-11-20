@@ -53,7 +53,7 @@ def _github_context_for_query(query: str) -> str | None:
             for item in snapshot.get("workflow_runs", [])[:10]
         ),
     ]
-    return "\\n".join(lines)[:6_000]
+    return "\n".join(lines)[:6_000]
 
 
 class ConversationMessage(BaseModel):
