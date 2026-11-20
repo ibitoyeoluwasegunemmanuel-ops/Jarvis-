@@ -187,3 +187,62 @@ def test_conversation_continues_when_project_memory_is_unavailable(auth, monkeyp
     })
     assert response.status_code == 200
     assert response.json()["content"] == "I can still help."
+
+
+
+def test_github_status_is_added_only_to_relevant_conversations(auth, monkeypatch):
+    import app.conversation_routes as routes
+    import app.conversation_service as service
+
+    monkeypatch.setenv("JARVIS_AI_API_KEY", "test-secret")
+    monkeypatch.setenv("JARVIS_AI_MODEL", "test-model")
+    snapshot_calls = []
+    monkeypatch.setattr(routes, "retrieve_project_memory", lambda *_: [])
+    monkeypatch.setattr(routes, "github_repository", lambda: (
+        snapshot_calls.append(True) or {
+            "status": "connected",
+            "repository": "owner/Jarvis-",
+            "default_branch": "main",
+            "branches": [{"name": "feature/cross-device-foundation", "protected": False}],
+            "recent_commits": [{"sha": "abc123", "message": "Add workspace sync"}],
+            "open_pull_requests": [{"number": 1, "title": "Foundation", "head": "feature", "base": "main"}],
+            "workflow_runs": [{"name": "JARVIS CI", "status": "completed", "conclusion": "success", "branch": "feature"}],
+        }
+    ))
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, limit):
+            return json.dumps({
+                "choices": [{"message": {"content": "The latest CI run passed."}}]
+            }).encode()
+
+    def fake_urlopen(request, timeout):
+        captured["payload"] = json.loads(request.data)
+        return FakeResponse()
+
+    monkeypatch.setattr(service.urllib.request, "urlopen", fake_urlopen)
+    response = client.post("/v1/conversation/reply", headers=auth, json={
+        "messages": [{"role": "user", "content": "What is the latest GitHub CI status?"}]
+    })
+    assert response.status_code == 200
+    assert snapshot_calls == [True]
+    system_message = captured["payload"]["messages"][0]["content"]
+    assert "owner/Jarvis-" in system_message
+    assert "JARVIS CI" in system_message
+    assert "untrusted reference data" in system_message
+
+
+def test_github_status_is_not_fetched_for_unrelated_conversations(auth, monkeypatch):
+    import app.conversation_routes as routes
+    monkeypatch.setattr(routes, "github_repository", lambda: (
+        (_ for _ in ()).throw(AssertionError("GitHub should not be queried"))
+    ))
+    assert routes._github_context_for_query("Help me plan tomorrow") is None
+    assert routes._github_context_for_query("What is my decision?") is None
