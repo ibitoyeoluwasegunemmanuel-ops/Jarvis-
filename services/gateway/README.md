@@ -32,7 +32,7 @@ All other routes, including /v1/*, /docs, and /openapi.json, require the X-Jarvi
 
 ## Conversational AI runtime
 
-The authenticated local endpoints `POST /v1/conversation/reply` and `GET /v1/conversation/history` provide a provider-neutral Chat Completions adapter with persistent conversation continuity. Completed user/assistant turns are stored in the local owner-authenticated SQLite database, and the desktop app restores the recent history after restart. The store retains at most 100 messages and the history endpoint returns the most recent 40 by default. System messages and caller-supplied credentials are rejected. Conversation history remains local to this Windows installation; it is not yet synchronised to mobile or cloud.
+The authenticated local endpoints `POST /v1/conversation/reply` and `GET /v1/conversation/history` provide a provider-neutral Chat Completions adapter with persistent conversation continuity. Completed user/assistant turns are stored in the local owner-authenticated SQLite database, and the desktop app restores the recent history after restart. The store retains at most 100 messages and the history endpoint returns the most recent 40 by default. System messages and caller-supplied credentials are rejected. Relevant owner-scoped project memory is retrieved from the local project memory store and added as bounded, explicitly untrusted reference context for each reply. Retrieval uses keyword overlap against the latest user message and returns at most six snippets. Conversation history and project memory remain local to this Windows installation; neither is yet synchronised to mobile or cloud.
 
 On Windows, configure the provider from **Settings → AI provider settings** in the desktop app. The API key is stored in Windows Credential Manager and is injected into the private gateway sidecar at startup. Restart JARVIS after saving a new provider configuration. The environment variables below remain available for development and other supported deployments:
 
@@ -42,7 +42,7 @@ On Windows, configure the provider from **Settings → AI provider settings** in
 
 The endpoint requires both the gateway process token and the local owner session. Provider errors are sanitized, outbound requests have a 45-second timeout, and non-HTTPS provider endpoints are rejected. No provider credential is committed to this repository.
 
-**Important:** the Windows conversation UI/native bridge, secure provider settings, and basic push-to-talk/speech output are connected. The speech controls depend on Windows WebView speech support and are not a continuous, interruptible voice engine. Conversation history is persisted locally only; cross-device conversation sync, retrieval-augmented memory, and cloud-side background operation are not implemented yet.
+**Important:** the Windows conversation UI/native bridge, secure provider settings, and basic push-to-talk/speech output are connected. The speech controls depend on Windows WebView speech support and are not a continuous, interruptible voice engine. Conversation history is persisted locally only; cross-device conversation sync, semantic/vector memory search, and cloud-side background operation are not implemented yet. Current memory retrieval is bounded keyword matching over local project memory.
 
 ## Security foundation
 
