@@ -237,7 +237,7 @@ function AuthScreen({
 
 type WorkspacePanel = "home" | "github" | "projects" | "calendar";
 
-function LiveWorkspace() {
+function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
   const [panel, setPanel] = useState<WorkspacePanel>("home");
   const [command, setCommand] = useState("");
   const [response, setResponse] = useState("I'm ready. Choose a workspace panel or enter a request. Voice conversation is the next integration milestone.");
@@ -271,7 +271,7 @@ function LiveWorkspace() {
       <div className="workspace-panel">
         {panel === "home" && <><div className="workspace-panel-icon"><BrainCircuit size={22}/></div><h4>Your command workspace</h4><p>Open connected tools and keep the assistant conversation beside your work. JARVIS will show connection status honestly and ask before taking consequential actions.</p><div className="workspace-shortcuts"><button onClick={() => openPanel("github")}><Command size={16}/> Open GitHub panel <ChevronRight size={15}/></button><button onClick={() => openPanel("projects")}><FolderKanban size={16}/> View projects <ChevronRight size={15}/></button></div></>}
         {panel === "github" && <><div className="workspace-panel-icon"><TerminalSquare size={22}/></div><span className="eyebrow">GITHUB WORKSPACE</span><h4>JARVIS source repository</h4><p>Open the active development branch and review commits, pull requests and build checks.</p><a className="workspace-external-link" href="https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/tree/feature/cross-device-foundation" target="_blank" rel="noreferrer">Open JARVIS on GitHub <ChevronRight size={15}/></a><small className="workspace-notice">GitHub account authorisation and live repository data are not yet integrated inside JARVIS.</small></>}
-        {panel === "projects" && <><div className="workspace-panel-icon"><FolderKanban size={22}/></div><h4>Project management</h4><p>Use the existing Projects section to manage locally stored projects, tasks, decisions, risks and approvals.</p><button className="workspace-action" onClick={() => document.querySelector<HTMLButtonElement>('[data-nav="Projects"]')?.click()}>Go to Projects <ChevronRight size={15}/></button></>}
+        {panel === "projects" && <><div className="workspace-panel-icon"><FolderKanban size={22}/></div><h4>Project management</h4><p>Use the existing Projects section to manage locally stored projects, tasks, decisions, risks and approvals.</p><button className="workspace-action" onClick={onOpenProjects}>Go to Projects <ChevronRight size={15}/></button></>}
         {panel === "calendar" && <><div className="workspace-panel-icon"><Activity size={22}/></div><h4>Calendar connection</h4><p>No calendar provider is connected yet. Calendar authorisation will be added as a scoped integration.</p><span className="workspace-notice">NOT CONNECTED</span></>}
       </div></div>
     </div>
@@ -1491,7 +1491,7 @@ export default function App() {
               <article className="metric-card"><div className="metric-icon green"><ShieldCheck size={18}/></div><span>SECURITY</span><strong>{capabilities?.security.gateway_session_configured ? "Session protected" : capabilitiesError ? "Bridge unavailable" : "Checking session"}</strong><small>{capabilities?.security.owner_session_authenticated ? "Owner session verified" : "Local owner account configured"}</small></article>
               <article className="metric-card"><div className="metric-icon amber"><Radio size={18}/></div><span>MONITORING</span><strong>Not connected</strong><small>No background checks yet</small></article>
             </div>
-            <LiveWorkspace/>
+            <LiveWorkspace onOpenProjects={() => setActive("Projects")}/>
             <div className="lower-grid"><article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
           </>
         )}
