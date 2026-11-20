@@ -244,7 +244,10 @@ type WorkspacePanel = "home" | "github" | "projects" | "calendar";
 function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
   const [panel, setPanel] = useState<WorkspacePanel>("home");
   const [command, setCommand] = useState("");
-  const [response, setResponse] = useState("I'm ready. Choose a workspace panel or enter a request. Voice conversation is the next integration milestone.");
+  const [response, setResponse] = useState("I am ready. Choose a workspace panel or ask me a question.");
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [thinking, setThinking] = useState(false);
+  const [conversationError, setConversationError] = useState("");
   const openPanel = (next: WorkspacePanel) => {
     setPanel(next);
     const messages: Record<WorkspacePanel, string> = {
@@ -255,7 +258,7 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
     };
     setResponse(messages[next]);
   };
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     const value = command.trim();
     if (!value) return;
@@ -278,7 +281,31 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
               : "Showing your JARVIS overview."
       );
     } else {
-      setResponse("I received: “" + value + "”. I can currently open the GitHub, Projects, Calendar and Overview panels. The AI reasoning and action engine is not connected yet, so I have not performed any other action.");
+      const nextMessages = [...messages, { role: "user" as const, content: value }].slice(-20);
+      setMessages(nextMessages);
+      setConversationError("");
+      setThinking(true);
+      setResponse("Thinking…");
+      setCommand("");
+      try {
+        const reply = await invoke<{ role: "assistant"; content: string }>("send_conversation", { messages: nextMessages });
+        setMessages([...nextMessages, reply].slice(-20));
+        setResponse(reply.content);
+      } catch (error) {
+        const message = String(error);
+        const friendly = message.includes("conversation_provider_not_configured")
+          ? "The conversation engine is connected, but an AI provider key and model have not been configured on this computer yet."
+          : message.includes("owner_session_expired")
+            ? "Your secure JARVIS session expired. Sign in again to continue."
+            : message.includes("conversation_provider_unavailable")
+              ? "The AI provider could not be reached. Check the provider connection and try again."
+              : "JARVIS could not complete the conversation request.";
+        setConversationError(friendly);
+        setResponse(friendly);
+      } finally {
+        setThinking(false);
+      }
+      return;
     }
     setCommand("");
   };
@@ -298,8 +325,15 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
         {panel === "projects" && <><div className="workspace-panel-icon"><FolderKanban size={22}/></div><h4>Project management</h4><p>Use the existing Projects section to manage locally stored projects, tasks, decisions, risks and approvals.</p><button className="workspace-action" onClick={onOpenProjects}>Go to Projects <ChevronRight size={15}/></button></>}
         {panel === "calendar" && <><div className="workspace-panel-icon"><Activity size={22}/></div><h4>Calendar connection</h4><p>No calendar provider is connected yet. Calendar authorisation will be added as a scoped integration.</p><span className="workspace-notice">NOT CONNECTED</span></>}
       </div></div>
+      {messages.length > 0 && <div className="conversation-thread" aria-live="polite">
+        {messages.map((message, index) => <div className={"conversation-message " + message.role} key={index}>
+          <span>{message.role === "user" ? "YOU" : "JARVIS"}</span><p>{message.content}</p>
+        </div>)}
+        {thinking && <div className="conversation-thinking"><span/> JARVIS is thinking…</div>}
+        {conversationError && <div className="workspace-notice">{conversationError}</div>}
+      </div>}
     </div>
-    <form className="workspace-command" onSubmit={submit}><Sparkles size={17}/><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Tell JARVIS what you want to open or do…" aria-label="JARVIS command"/><button type="submit" disabled={!command.trim()}>Send <ChevronRight size={15}/></button></form>
+    <form className="workspace-command" onSubmit={submit}><Sparkles size={17}/><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Tell JARVIS what you want to open or do…" aria-label="JARVIS command"/><button type="submit" disabled={!command.trim() || thinking}>Send <ChevronRight size={15}/></button></form>
   </section>;
 }
 
