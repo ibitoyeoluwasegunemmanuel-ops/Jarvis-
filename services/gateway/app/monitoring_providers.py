@@ -119,6 +119,7 @@ def github_repository() -> dict[str, Any]:
             "branches": [],
             "recent_commits": [],
             "open_pull_requests": [],
+            "workflow_runs": [],
         }
 
     token = os.environ.get("GITHUB_TOKEN", "").strip()
@@ -128,6 +129,7 @@ def github_repository() -> dict[str, Any]:
         branches_data = _get_json(base + "/branches?per_page=10", token)
         commits_data = _get_json(base + "/commits?per_page=5", token)
         pulls_data = _get_json(base + "/pulls?state=open&per_page=10", token)
+        workflows_data = _get_json(base + "/actions/runs?per_page=10", token)
     except ProviderUnavailable as error:
         return {
             "provider": "github",
@@ -137,9 +139,11 @@ def github_repository() -> dict[str, Any]:
             "branches": [],
             "recent_commits": [],
             "open_pull_requests": [],
+            "workflow_runs": [],
         }
 
-    if not isinstance(repo_data, dict) or not isinstance(branches_data, list) or not isinstance(commits_data, list) or not isinstance(pulls_data, list):
+    workflows = workflows_data.get("workflow_runs", []) if isinstance(workflows_data, dict) else None
+    if not isinstance(repo_data, dict) or not isinstance(branches_data, list) or not isinstance(commits_data, list) or not isinstance(pulls_data, list) or not isinstance(workflows, list):
         return {
             "provider": "github",
             "status": "unavailable",
@@ -148,6 +152,7 @@ def github_repository() -> dict[str, Any]:
             "branches": [],
             "recent_commits": [],
             "open_pull_requests": [],
+            "workflow_runs": [],
         }
 
     branches = [
@@ -178,6 +183,17 @@ def github_repository() -> dict[str, Any]:
         }
         for item in pulls_data[:10] if isinstance(item, dict)
     ]
+    workflow_runs = [
+        {
+            "name": str(item.get("name", ""))[:120],
+            "status": str(item.get("status", "unknown"))[:40],
+            "conclusion": str(item.get("conclusion") or "")[:40],
+            "branch": str(item.get("head_branch", ""))[:120],
+            "updated_at": str(item.get("updated_at", ""))[:40],
+            "url": str(item.get("html_url", ""))[:300],
+        }
+        for item in workflows[:10] if isinstance(item, dict)
+    ]
     return {
         "provider": "github",
         "status": "connected",
@@ -189,6 +205,7 @@ def github_repository() -> dict[str, Any]:
         "branches": branches,
         "recent_commits": commits,
         "open_pull_requests": pulls,
+        "workflow_runs": workflow_runs,
     }
 
 
