@@ -45,7 +45,9 @@ class _JarvisHomeState extends State<JarvisHome> {
   static const storage = FlutterSecureStorage();
   bool loading = true, busy = false;
   String? error;
-  List<dynamic> workspaces = [], projects = [], alerts = [], devices = [];
+  List<dynamic> workspaces = [], projects = [], alerts = [], devices = [], memories = [];
+  final memoryContent = TextEditingController();
+  String memoryCategory = 'note';
   Map<String,dynamic>? workspace, overview;
   int tab = 0;
   String get workspaceId => workspace?['id']?.toString() ?? '';
@@ -84,12 +86,13 @@ class _JarvisHomeState extends State<JarvisHome> {
     if (workspaceId.isEmpty) { return; }
     final id = workspaceId;
     final values = await Future.wait([
-      client.overview(id), client.projects(id), client.alerts(id), client.devices(id),
+      client.overview(id), client.projects(id), client.alerts(id), client.devices(id), client.memories(id),
     ]);
     overview = values[0] as Map<String,dynamic>;
     projects = values[1] as List<dynamic>;
     alerts = values[2] as List<dynamic>;
     devices = values[3] as List<dynamic>;
+    memories = values[4] as List<dynamic>;
   }
 
   Future<void> run(Future<void> Function() action) async {
@@ -137,7 +140,7 @@ class _JarvisHomeState extends State<JarvisHome> {
   }
 
   @override
-  void dispose() { client.dispose(); super.dispose(); }
+  void dispose() { memoryContent.dispose(); client.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -243,6 +246,59 @@ class _JarvisHomeState extends State<JarvisHome> {
         )),
       ]),
       ListView(padding: const EdgeInsets.all(20), children: [
+        const Text('SHARED MEMORY', style: TextStyle(color: accent, letterSpacing: 1.5, fontSize: 11, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        const Text('JARVIS remembers.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        const Text('Save useful preferences, facts and decisions. These entries are stored in your private workspace and can be retrieved by your other signed-in devices.', style: TextStyle(color: muted, height: 1.5)),
+        const SizedBox(height: 18),
+        DropdownButtonFormField<String>(
+          initialValue: memoryCategory,
+          decoration: const InputDecoration(labelText: 'Memory type'),
+          items: const [
+            DropdownMenuItem(value: 'preference', child: Text('Preference')),
+            DropdownMenuItem(value: 'fact', child: Text('Fact')),
+            DropdownMenuItem(value: 'decision', child: Text('Decision')),
+            DropdownMenuItem(value: 'note', child: Text('Note')),
+            DropdownMenuItem(value: 'reference', child: Text('Reference')),
+          ],
+          onChanged: busy ? null : (value) { if (value != null) setState(() => memoryCategory = value); },
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: memoryContent,
+          minLines: 2,
+          maxLines: 5,
+          maxLength: 4000,
+          decoration: const InputDecoration(labelText: 'What should JARVIS remember?', alignLabelWithHint: true),
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: busy || memoryContent.text.trim().isEmpty ? null : () => run(() async {
+            await client.createMemory(
+              workspaceId: workspaceId,
+              category: memoryCategory,
+              content: memoryContent.text.trim(),
+            );
+            memoryContent.clear();
+            await refreshData();
+          }),
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Save to shared memory'),
+        ),
+        const SizedBox(height: 22),
+        SectionHeader('SAVED MEMORIES', onRefresh: () => run(refreshData)),
+        if (memories.isEmpty)
+          const EmptyLine('No memories saved yet. Add a preference, fact or decision above.')
+        else
+          ...memories.map((item) => DataLine(
+            title: item['content']?.toString() ?? 'Memory',
+            subtitle: item['category']?.toString() ?? '',
+            trailing: item['created_at'] == null ? null : DateTime.tryParse(item['created_at'].toString())?.toLocal().toString().split('.').first,
+            icon: Icons.psychology_outlined,
+          )),
+      ]),
+      ListView(padding: const EdgeInsets.all(20), children: [
         const Text('YOUR DEVICES', style: TextStyle(color: accent, letterSpacing: 1.5, fontSize: 11, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         const Text('One JARVIS. All your devices.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
@@ -295,6 +351,7 @@ class _JarvisHomeState extends State<JarvisHome> {
           NavigationDestination(icon: Icon(Icons.grid_view), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.work_outline), label: 'Workspace'),
           NavigationDestination(icon: Icon(Icons.devices), label: 'Devices'),
+          NavigationDestination(icon: Icon(Icons.psychology_outlined), label: 'Memory'),
         ],
       ),
     );
