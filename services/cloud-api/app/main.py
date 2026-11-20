@@ -101,6 +101,22 @@ class ProjectSync(BaseModel):
         return value
 
 
+class MemoryCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    workspace_id: uuid.UUID
+    category: Literal["preference", "fact", "decision", "note", "reference"]
+    content: str = Field(min_length=1, max_length=4000)
+    source_ref: str = Field(default="", max_length=1000)
+
+    @field_validator("content")
+    @classmethod
+    def clean_memory_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("memory_content_required")
+        return value
+
+
 class DeviceRegistration(BaseModel):
     model_config = {"extra": "forbid"}
     workspace_id: uuid.UUID
@@ -247,6 +263,36 @@ def list_projects(user_id: UserId, workspace_id: uuid.UUID = Query(...)) -> list
                ORDER BY updated_at DESC LIMIT 100""",
             (workspace_id,),
         ).fetchall()
+
+
+@app.post("/v1/memory", status_code=201)
+def create_memory(payload: MemoryCreate, user_id: UserId) -> dict:
+    with user_connection(user_id) as db:
+        return db.execute(
+            """INSERT INTO jarvis.memory_entries
+               (workspace_id, created_by, category, content, source_ref)
+               VALUES (%s, %s, %s, %s, %s)
+               RETURNING id, workspace_id, category, content, source_ref, created_at""",
+            (payload.workspace_id, user_id, payload.category,
+             payload.content.strip(), payload.source_ref.strip()),
+        ).fetchone()
+
+
+@app.get("/v1/memory")
+def list_memory(
+    user_id: UserId,
+    workspace_id: uuid.UUID = Query(...),
+    category: Literal["preference", "fact", "decision", "note", "reference"] | None = None,
+) -> list[dict]:
+    with user_connection(user_id) as db:
+        query = """SELECT id, workspace_id, category, content, source_ref, created_at
+                   FROM jarvis.memory_entries WHERE workspace_id = %s"""
+        params: tuple[object, ...] = (workspace_id,)
+        if category is not None:
+            query += " AND category = %s"
+            params += (category,)
+        query += " ORDER BY created_at DESC LIMIT 200"
+        return db.execute(query, params).fetchall()
 
 
 @app.get("/v1/monitoring/alerts")
