@@ -1874,8 +1874,8 @@ fn get_ai_provider_status() -> AiProviderStatus {
     match read_ai_provider_config() {
         Some(config) => AiProviderStatus {
             configured: true,
-            model: config.model,
-            endpoint: config.endpoint,
+            model: config.model.clone(),
+            endpoint: config.endpoint.clone(),
         },
         None => AiProviderStatus {
             configured: false,
