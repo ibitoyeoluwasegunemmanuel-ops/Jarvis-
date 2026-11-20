@@ -585,7 +585,7 @@ async fn execute_approved_project_task(
     description: String,
     runtime: tauri::State<'_, GatewayRuntime>,
 ) -> Result<serde_json::Value, String> {
-    if approval_id.trim().is_empty() || approval_id.len() > 64
+    if !valid_workspace_id(&approval_id)
         || !valid_workspace_id(&project_id)
         || title.trim().is_empty() || title.trim().len() > 160
         || description.len() > 2000 {
@@ -819,7 +819,7 @@ async fn create_project_approval(project_id: String, action: String, arguments: 
 
 #[tauri::command]
 async fn decide_project_approval(approval_id: String, approve: bool, runtime: tauri::State<'_, GatewayRuntime>) -> Result<serde_json::Value, String> {
-    if approval_id.trim().is_empty() || approval_id.len() > 64 { return Err("approval_id_invalid".into()); }
+    if !valid_workspace_id(&approval_id) { return Err("approval_id_invalid".into()); }
     let client = gateway_client()?;
     let mut token = runtime.owner_session.lock().map_err(|_| "native_owner_session_unavailable".to_string())?.clone().ok_or_else(|| "owner_session_required".to_string())?;
     let result = async {
