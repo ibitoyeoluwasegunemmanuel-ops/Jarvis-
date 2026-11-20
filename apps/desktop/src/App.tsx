@@ -522,6 +522,27 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (active !== "Memory" || !cloudSyncStatus?.connected) return;
+    let cancelled = false;
+    setCloudMemoryBusy(true);
+    setCloudMemoryError("");
+    invoke<CloudMemoryRecord[]>("list_cloud_memory")
+      .then(entries => {
+        if (!cancelled) setCloudMemories(entries);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setCloudMemoryError(String(error).includes("cloud_account_not_connected")
+          ? "Connect the shared cloud workspace in Projects first."
+          : "JARVIS could not load shared memory. Check the cloud API connection.");
+      })
+      .finally(() => {
+        if (!cancelled) setCloudMemoryBusy(false);
+      });
+    return () => { cancelled = true; };
+  }, [active, cloudSyncStatus?.connected]);
+
   const submitOwnerAuth = async (password: string, _confirmation: string) => {
     setAuthBusy(true);
     setAuthError("");
