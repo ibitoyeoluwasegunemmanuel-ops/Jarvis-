@@ -134,6 +134,13 @@ struct ConversationReply {
 }
 
 #[derive(Deserialize, Serialize)]
+struct ConversationHistoryMessage {
+    role: String,
+    content: String,
+    created_at: f64,
+}
+
+#[derive(Deserialize, Serialize)]
 struct CloudMemoryRecord {
     id: String,
     workspace_id: String,
@@ -1912,6 +1919,43 @@ fn get_ai_provider_status() -> AiProviderStatus {
     }
 }
 
+/// Loads the recent persisted conversation through the owner-authenticated bridge.
+#[tauri::command]
+async fn list_conversation_history(
+    runtime: tauri::State<'_, GatewayRuntime>,
+) -> Result<Vec<ConversationHistoryMessage>, String> {
+    let mut owner_token = runtime
+        .owner_session
+        .lock()
+        .map_err(|_| "native_owner_session_unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "owner_session_required".to_string())?;
+
+    let result = async {
+        let client = gateway_client()?;
+        let response = client
+            .get(gateway_url("/v1/conversation/history"))
+            .header("X-Jarvis-Session", &runtime.session_token)
+            .header("X-Jarvis-Owner-Session", &owner_token)
+            .send()
+            .await
+            .map_err(|_| "gateway_not_ready".to_string())?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("owner_session_expired".to_string());
+        }
+        if !response.status().is_success() {
+            return Err(format!("conversation_history_failed_{}", response.status().as_u16()));
+        }
+        response.json::<Vec<ConversationHistoryMessage>>()
+            .await
+            .map_err(|_| "conversation_history_response_invalid".to_string())
+    }.await;
+
+    owner_token.zeroize();
+    result
+}
+
 /// Sends a bounded conversation through the authenticated local gateway.
 /// The owner session and process token never leave the native Rust process.
 #[tauri::command]
@@ -1976,6 +2020,7 @@ pub fn run() {
             sync_cloud_projects,
             get_cloud_sync_status,
             send_conversation,
+            list_conversation_history,
             save_ai_provider_config,
             get_ai_provider_status,
             remove_ai_provider_config,
