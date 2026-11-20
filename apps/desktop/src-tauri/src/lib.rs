@@ -1873,6 +1873,29 @@ fn save_ai_provider_config(
     }
 }
 
+/// Removes the saved AI provider credential from Windows Credential Manager.
+#[tauri::command]
+fn remove_ai_provider_config() -> Result<AiProviderStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let entry = ai_provider_entry()?;
+        match entry.delete_credential() {
+            Ok(()) => {},
+            Err(keyring::Error::NoEntry) => {},
+            Err(_) => return Err("secure_credential_store_delete_failed".to_string()),
+        }
+        return Ok(AiProviderStatus {
+            configured: false,
+            model: String::new(),
+            endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
+        });
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("secure_ai_provider_storage_supported_on_windows_only".to_string())
+    }
+}
+
 #[tauri::command]
 fn get_ai_provider_status() -> AiProviderStatus {
     match read_ai_provider_config() {
@@ -1955,6 +1978,7 @@ pub fn run() {
             send_conversation,
             save_ai_provider_config,
             get_ai_provider_status,
+            remove_ai_provider_config,
             list_cloud_memory,
             create_cloud_memory,
             disconnect_cloud,
