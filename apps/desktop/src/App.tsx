@@ -22,6 +22,10 @@ type MonitoringProvider = {
   provider: string; status: "connected" | "not_configured" | "unavailable";
   detail?: string; deployments?: Array<{ id: string; name: string; url: string; state: string; created_at?: number; target: string }>;
   projects?: Array<{ ref: string; name: string; region: string; status: string; created_at: string }>;
+  repository?: string; default_branch?: string; html_url?: string; updated_at?: string;
+  branches?: Array<{ name: string; protected: boolean }>;
+  recent_commits?: Array<{ sha: string; message: string; author: string; committed_at: string; url: string }>;
+  open_pull_requests?: Array<{ number: number; title: string; state: string; url: string; head: string; base: string }>;
 };
 type MonitoringOverview = { read_only: boolean; providers: MonitoringProvider[] };
 type GatewayCapabilities = {
@@ -1347,17 +1351,26 @@ export default function App() {
             <div className="monitor-provider-grid">
               {(monitoring?.providers ?? [
                 { provider: "vercel", status: "not_configured" as const },
-                { provider: "supabase", status: "not_configured" as const }
+                { provider: "supabase", status: "not_configured" as const },
+                { provider: "github", status: "not_configured" as const }
               ]).map(provider => (
                 <article className="panel-card monitor-provider" key={provider.provider}>
-                  <div className="panel-title"><div><span className="eyebrow">PROVIDER</span><h3>{provider.provider === "vercel" ? "Vercel" : "Supabase"}</h3></div><span className={`monitor-state ${provider.status}`}>{provider.status.replace("_", " ")}</span></div>
+                  <div className="panel-title"><div><span className="eyebrow">PROVIDER</span><h3>{provider.provider === "vercel" ? "Vercel" : provider.provider === "supabase" ? "Supabase" : "GitHub"}</h3></div><span className={`monitor-state ${provider.status}`}>{provider.status.replace("_", " ")}</span></div>
                   {provider.provider === "vercel" ? (
                     <div className="monitor-items">
                       {(provider.deployments ?? []).length ? provider.deployments!.map(item => <div className="monitor-item" key={item.id}><b>{item.name || item.url || "Deployment"}</b><span>{item.state} · {item.target || "environment not specified"}</span></div>) : <p className="muted">{provider.status === "not_configured" ? "Add a read-only VERCEL_TOKEN to the local gateway to inspect deployments." : provider.detail || "No deployments returned."}</p>}
                     </div>
-                  ) : (
+                  ) : provider.provider === "supabase" ? (
                     <div className="monitor-items">
                       {(provider.projects ?? []).length ? provider.projects!.map(item => <div className="monitor-item" key={item.ref}><b>{item.name}</b><span>{item.status} · {item.region}</span></div>) : <p className="muted">{provider.status === "not_configured" ? "Add a scoped read-only SUPABASE_ACCESS_TOKEN to inspect projects." : provider.detail || "No projects returned."}</p>}
+                    </div>
+                  ) : (
+                    <div className="monitor-items">
+                      {provider.repository && <div className="monitor-item"><b>{provider.repository}</b><span>Default branch: {provider.default_branch || "unknown"}</span></div>}
+                      {(provider.branches ?? []).map(item => <div className="monitor-item" key={item.name}><b>{item.name}</b><span>{item.protected ? "Protected branch" : "Branch"}</span></div>)}
+                      {(provider.recent_commits ?? []).map(item => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={item.sha}><b>{item.message || item.sha}</b><span>{item.author} · {item.sha}</span></a>)}
+                      {(provider.open_pull_requests ?? []).map(item => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={item.number}><b>#{item.number} {item.title}</b><span>{item.head} → {item.base}</span></a>)}
+                      {provider.status !== "connected" && <p className="muted">{provider.detail || "GitHub repository monitoring is unavailable."}</p>}
                     </div>
                   )}
                 </article>
