@@ -96,8 +96,10 @@ fn ai_provider_entry() -> Result<keyring::Entry, String> {
 #[cfg(target_os = "windows")]
 fn read_ai_provider_config() -> Option<AiProviderConfig> {
     let entry = ai_provider_entry().ok()?;
-    let raw = entry.get_password().ok()?;
-    serde_json::from_str(&raw).ok()
+    let mut raw = entry.get_password().ok()?;
+    let parsed = serde_json::from_str(&raw).ok();
+    raw.zeroize();
+    parsed
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1854,11 +1856,12 @@ fn save_ai_provider_config(
     #[cfg(target_os = "windows")]
     {
         let config = AiProviderConfig { api_key: api_key.clone(), model: model.clone(), endpoint: endpoint.clone() };
-        let serialized = serde_json::to_string(&config)
+        let mut serialized = serde_json::to_string(&config)
             .map_err(|_| "ai_provider_configuration_invalid".to_string())?;
         let entry = ai_provider_entry()?;
-        entry.set_password(&serialized)
-            .map_err(|_| "secure_credential_store_write_failed".to_string())?;
+        let stored = entry.set_password(&serialized);
+        serialized.zeroize();
+        stored.map_err(|_| "secure_credential_store_write_failed".to_string())?;
         api_key.zeroize();
         return Ok(AiProviderStatus { configured: true, model, endpoint });
     }
