@@ -87,7 +87,7 @@ struct ConversationRequest<'a> {
     messages: &'a [ConversationMessage],
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct ConversationReply {
     role: String,
     content: String,
