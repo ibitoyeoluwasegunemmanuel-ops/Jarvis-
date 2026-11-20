@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.conversation_service import (
-    ConversationNotConfigured,
     ConversationProviderError,
     create_assistant_reply,
 )
