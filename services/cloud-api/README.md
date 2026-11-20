@@ -11,6 +11,7 @@ loopback-only and must never be exposed to a phone, LAN, tunnel, or public IP.
 - Uses a transaction-local PostgreSQL identity for RLS checks. Tenant policies use direct membership predicates; the migrations avoid SECURITY DEFINER helpers.
 - Supports owner workspace bootstrap, device registration/list/revocation, and authenticated device heartbeat timestamps.
 - Provides workspace-scoped project and alert reads, plus idempotent desktop project sync keyed by local project ID.
+- Stores workspace-scoped memory entries (preferences, facts, decisions, notes and references) for authenticated cross-device retrieval; writes are limited to workspace owners, admins and members.
 - Records mobile device heartbeats and supports per-user device revocation.
 - Exposes only a non-sensitive liveness endpoint without authentication.
 
