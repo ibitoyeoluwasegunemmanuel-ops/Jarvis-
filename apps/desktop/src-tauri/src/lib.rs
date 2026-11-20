@@ -67,6 +67,44 @@ impl Drop for CloudSession {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct AiProviderConfig {
+    api_key: String,
+    model: String,
+    endpoint: String,
+}
+
+impl Drop for AiProviderConfig {
+    fn drop(&mut self) {
+        self.api_key.zeroize();
+    }
+}
+
+#[derive(Serialize)]
+struct AiProviderStatus {
+    configured: bool,
+    model: String,
+    endpoint: String,
+}
+
+#[cfg(target_os = "windows")]
+fn ai_provider_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new("com.ceoglobal.jarvis", "ai-provider-config")
+        .map_err(|_| "secure_credential_store_unavailable".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn read_ai_provider_config() -> Option<AiProviderConfig> {
+    let entry = ai_provider_entry().ok()?;
+    let raw = entry.get_password().ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_ai_provider_config() -> Option<AiProviderConfig> {
+    None
+}
+
 #[derive(Serialize)]
 struct CloudSyncStatus {
     connected: bool,
@@ -1795,6 +1833,58 @@ async fn update_project_status(
     result
 }
 
+/// Store the AI provider credential in Windows Credential Manager.
+#[tauri::command]
+fn save_ai_provider_config(
+    mut api_key: String,
+    model: String,
+    endpoint: Option<String>,
+) -> Result<AiProviderStatus, String> {
+    let model = model.trim().to_string();
+    let endpoint = endpoint.unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
+    let endpoint = endpoint.trim().to_string();
+    if api_key.trim().len() < 10 || api_key.len() > 4096 || model.is_empty() || model.len() > 120 {
+        api_key.zeroize();
+        return Err("ai_provider_configuration_invalid".to_string());
+    }
+    if !endpoint.starts_with("https://") || endpoint.len() > 500 {
+        api_key.zeroize();
+        return Err("ai_provider_endpoint_must_use_https".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let config = AiProviderConfig { api_key: api_key.clone(), model: model.clone(), endpoint: endpoint.clone() };
+        let serialized = serde_json::to_string(&config)
+            .map_err(|_| "ai_provider_configuration_invalid".to_string())?;
+        let entry = ai_provider_entry()?;
+        entry.set_password(&serialized)
+            .map_err(|_| "secure_credential_store_write_failed".to_string())?;
+        api_key.zeroize();
+        return Ok(AiProviderStatus { configured: true, model, endpoint });
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        api_key.zeroize();
+        Err("secure_ai_provider_storage_supported_on_windows_only".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_ai_provider_status() -> AiProviderStatus {
+    match read_ai_provider_config() {
+        Some(config) => AiProviderStatus {
+            configured: true,
+            model: config.model,
+            endpoint: config.endpoint,
+        },
+        None => AiProviderStatus {
+            configured: false,
+            model: String::new(),
+            endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
+        },
+    }
+}
+
 /// Sends a bounded conversation through the authenticated local gateway.
 /// The owner session and process token never leave the native Rust process.
 #[tauri::command]
@@ -1859,6 +1949,8 @@ pub fn run() {
             sync_cloud_projects,
             get_cloud_sync_status,
             send_conversation,
+            save_ai_provider_config,
+            get_ai_provider_status,
             list_cloud_memory,
             create_cloud_memory,
             disconnect_cloud,
@@ -1890,10 +1982,19 @@ pub fn run() {
         ])
         .setup(|app| {
             let token = new_session_token();
-            let child = match app.shell().sidecar("jarvis-gateway") {
+            let provider = read_ai_provider_config();
+            let mut sidecar = app.shell().sidecar("jarvis-gateway")
+                .map_err(|error| format!("gateway_sidecar_unavailable: {error}"))?
+                .args(["--host", "127.0.0.1", "--port", "8765"])
+                .env("JARVIS_SESSION_TOKEN", token.clone());
+            if let Some(config) = provider.as_ref() {
+                sidecar = sidecar
+                    .env("JARVIS_AI_API_KEY", config.api_key.clone())
+                    .env("JARVIS_AI_MODEL", config.model.clone())
+                    .env("JARVIS_AI_ENDPOINT", config.endpoint.clone());
+            }
+            let child = match sidecar
                 Ok(command) => match command
-                    .args(["--host", "127.0.0.1", "--port", "8765"])
-                    .env("JARVIS_SESSION_TOKEN", token.clone())
                     .set_process_group(true)
                     .kill_on_drop(true)
                     .spawn()
