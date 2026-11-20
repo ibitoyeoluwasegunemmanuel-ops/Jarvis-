@@ -1,5 +1,6 @@
 """Authenticated JARVIS conversation endpoint."""
 from typing import Literal
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ from app.conversation_store import list_conversation_history, save_conversation_
 from app.conversation_memory import retrieve_project_memory
 
 router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
+logger = logging.getLogger(__name__)
 
 
 class ConversationMessage(BaseModel):
@@ -40,7 +42,12 @@ def conversation_reply(payload: ConversationRequest) -> dict[str, str]:
     """Generate one assistant reply for the authenticated local owner."""
     try:
         latest_user_message = payload.messages[-1].content
-        memory_context = retrieve_project_memory(latest_user_message)
+        try:
+            memory_context = retrieve_project_memory(latest_user_message)
+        except Exception:
+            # Project memory is optional context; a local DB issue must not take chat offline.
+            logger.exception("conversation_memory_retrieval_failed")
+            memory_context = []
         reply = create_assistant_reply(
             [message.model_dump() for message in payload.messages],
             memory_context=memory_context,
