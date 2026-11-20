@@ -76,6 +76,24 @@ struct CloudSyncStatus {
     synced_projects: usize,
 }
 
+#[derive(Deserialize, Serialize)]
+struct CloudMemoryRecord {
+    id: String,
+    workspace_id: String,
+    category: String,
+    content: String,
+    source_ref: String,
+    created_at: f64,
+}
+
+#[derive(Serialize)]
+struct CloudMemoryCreatePayload<'a> {
+    workspace_id: &'a str,
+    category: &'a str,
+    content: &'a str,
+    source_ref: &'a str,
+}
+
 #[derive(Serialize)]
 struct OwnerPasswordPayload<'a> {
     password: &'a str,
@@ -1775,6 +1793,8 @@ pub fn run() {
             connect_cloud_and_sync,
             sync_cloud_projects,
             get_cloud_sync_status,
+            list_cloud_memory,
+            create_cloud_memory,
             disconnect_cloud,
             setup_owner,
             login_owner,
