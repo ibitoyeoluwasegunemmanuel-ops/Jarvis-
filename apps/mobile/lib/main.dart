@@ -136,7 +136,7 @@ class _JarvisHomeState extends State<JarvisHome> {
     if (workspaceId.isNotEmpty) {
       await storage.delete(key: 'jarvis_registered_device_id_$workspaceId');
     }
-    workspaces = []; workspace = null; projects = []; alerts = []; devices = []; overview = null;
+    workspaces = []; workspace = null; projects = []; alerts = []; devices = []; memories = []; overview = null;
   }
 
   @override
@@ -271,6 +271,7 @@ class _JarvisHomeState extends State<JarvisHome> {
           maxLines: 5,
           maxLength: 4000,
           decoration: const InputDecoration(labelText: 'What should JARVIS remember?', alignLabelWithHint: true),
+          onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 8),
         FilledButton.icon(
