@@ -10,6 +10,7 @@ from app.conversation_service import (
     ConversationProviderError,
     create_assistant_reply,
 )
+from app.conversation_store import list_conversation_history, save_conversation_turn
 
 router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
 
@@ -27,13 +28,21 @@ class ConversationRequest(BaseModel):
     messages: list[ConversationMessage] = Field(min_length=1, max_length=20)
 
 
+@router.get("/history", dependencies=[Depends(_require_owner)])
+def conversation_history() -> list[dict[str, object]]:
+    """Return the recent private conversation for the signed-in local owner."""
+    return list_conversation_history()
+
+
 @router.post("/reply", dependencies=[Depends(_require_owner)])
 def conversation_reply(payload: ConversationRequest) -> dict[str, str]:
     """Generate one assistant reply for the authenticated local owner."""
     try:
-        return create_assistant_reply(
+        reply = create_assistant_reply(
             [message.model_dump() for message in payload.messages]
         )
+        save_conversation_turn(payload.messages[-1].content, reply["content"])
+        return reply
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except ConversationNotConfigured as error:
