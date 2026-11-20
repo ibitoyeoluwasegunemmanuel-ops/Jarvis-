@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.conversation_service import (
+    ConversationNotConfigured,
     ConversationProviderError,
     create_assistant_reply,
 )
@@ -114,3 +115,43 @@ def test_conversation_rejects_non_https_provider_endpoint(monkeypatch):
     monkeypatch.setenv("JARVIS_AI_ENDPOINT", "http://example.com/chat")
     with pytest.raises(ConversationNotConfigured, match="endpoint_invalid"):
         create_assistant_reply([{"role": "user", "content": "Hello"}])
+
+
+
+def test_conversation_history_requires_auth_and_restores_saved_turns(auth, monkeypatch):
+    import app.conversation_service as service
+
+    monkeypatch.setenv("JARVIS_AI_API_KEY", "test-secret")
+    monkeypatch.setenv("JARVIS_AI_MODEL", "test-model")
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, limit):
+            return json.dumps({
+                "choices": [{"message": {"content": "I have restored context."}}]
+            }).encode()
+
+    monkeypatch.setattr(service.urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse())
+    reply = client.post("/v1/conversation/reply", headers=auth, json={
+        "messages": [{"role": "user", "content": "Remember this conversation."}]
+    })
+    assert reply.status_code == 200
+
+    history = client.get("/v1/conversation/history", headers=auth)
+    assert history.status_code == 200
+    assert [item["role"] for item in history.json()] == ["user", "assistant"]
+    assert history.json()[0]["content"] == "Remember this conversation."
+    assert history.json()[1]["content"] == "I have restored context."
+
+
+def test_conversation_history_is_owner_and_gateway_protected(monkeypatch):
+    monkeypatch.setenv("JARVIS_SESSION_TOKEN", GATEWAY_TOKEN)
+    response = client.get("/v1/conversation/history", headers={
+        "X-Jarvis-Session": GATEWAY_TOKEN,
+    })
+    assert response.status_code == 401
