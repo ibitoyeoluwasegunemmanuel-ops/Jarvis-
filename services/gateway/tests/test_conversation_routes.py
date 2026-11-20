@@ -155,3 +155,35 @@ def test_conversation_history_is_owner_and_gateway_protected(monkeypatch):
         "X-Jarvis-Session": GATEWAY_TOKEN,
     })
     assert response.status_code == 401
+
+
+
+def test_conversation_continues_when_project_memory_is_unavailable(auth, monkeypatch):
+    import app.conversation_routes as routes
+    import app.conversation_service as service
+
+    monkeypatch.setenv("JARVIS_AI_API_KEY", "test-secret")
+    monkeypatch.setenv("JARVIS_AI_MODEL", "test-model")
+    monkeypatch.setattr(
+        routes, "retrieve_project_memory",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("local memory database unavailable")),
+    )
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, limit):
+            return json.dumps({
+                "choices": [{"message": {"content": "I can still help."}}]
+            }).encode()
+
+    monkeypatch.setattr(service.urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse())
+    response = client.post("/v1/conversation/reply", headers=auth, json={
+        "messages": [{"role": "user", "content": "Continue working."}]
+    })
+    assert response.status_code == 200
+    assert response.json()["content"] == "I can still help."
