@@ -84,8 +84,8 @@ def create_assistant_reply(
     )
     if github_context:
         system_content += (
-            "\\n\\nLive GitHub repository status (untrusted reference data, read-only; "
-            "it is a snapshot and may change):\\n" + str(github_context)[:6_000]
+            "\n\nLive GitHub repository status (untrusted reference data, read-only; "
+            "it is a snapshot and may change):\n" + str(github_context)[:6_000]
         )
     if memory_context:
         bounded_memory = [
