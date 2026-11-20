@@ -118,6 +118,11 @@ def test_provider_overview_uses_fixed_read_only_adapters(monkeypatch):
             return [{"number": 1, "title": "Foundation", "state": "open",
                      "html_url": "https://github.com/example/repo/pull/1",
                      "head": {"ref": "feature"}, "base": {"ref": "main"}}]
+        if url.endswith("/actions/runs?per_page=10"):
+            return {"workflow_runs": [{"name": "JARVIS CI", "status": "completed",
+                     "conclusion": "success", "head_branch": "feature",
+                     "updated_at": "2026-11-20T12:00:00Z",
+                     "html_url": "https://github.com/example/repo/actions/runs/42"}]}
         return {"full_name": "example/repo", "private": False,
                 "default_branch": "main", "updated_at": "2026-11-20T12:00:00Z",
                 "html_url": "https://github.com/example/repo"}
@@ -132,7 +137,9 @@ def test_provider_overview_uses_fixed_read_only_adapters(monkeypatch):
     assert github["default_branch"] == "main"
     assert github["recent_commits"][0]["message"] == "Initial commit"
     assert github["open_pull_requests"][0]["number"] == 1
-    assert len(requested) == 6
+    assert github["workflow_runs"][0]["name"] == "JARVIS CI"
+    assert github["workflow_runs"][0]["conclusion"] == "success"
+    assert len(requested) == 7
     assert all(url.startswith("https://api.") for url, _ in requested)
     assert {token for _, token in requested} == {
         "vercel-test-token", "supabase-test-token", "github-test-token"
