@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -241,6 +241,20 @@ function AuthScreen({
   );
 }
 
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechWindow = Window & {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+};
 type WorkspacePanel = "home" | "github" | "projects" | "calendar";
 
 function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
@@ -250,6 +264,54 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [thinking, setThinking] = useState(false);
   const [conversationError, setConversationError] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  const startVoiceInput = () => {
+    const SpeechRecognitionCtor = (window as SpeechWindow).SpeechRecognition
+      || (window as SpeechWindow).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setVoiceError("Speech recognition is not available in this Windows WebView. You can still type to JARVIS.");
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = "en-NG";
+      recognition.interimResults = false;
+      recognition.continuous = false;
+      recognition.onresult = event => {
+        const transcript = event.results[0]?.[0]?.transcript?.trim();
+        if (transcript) setCommand(transcript);
+      };
+      recognition.onerror = () => {
+        setVoiceError("Microphone input could not be started. Check Windows microphone permission.");
+        setListening(false);
+      };
+      recognition.onend = () => setListening(false);
+      recognitionRef.current = recognition;
+      setVoiceError("");
+      setListening(true);
+      recognition.start();
+    } catch {
+      setListening(false);
+      setVoiceError("Microphone input could not be started. Check Windows microphone permission.");
+    }
+  };
+  const speakLatest = () => {
+    if (!("speechSynthesis" in window)) {
+      setVoiceError("Speech output is not available in this Windows WebView.");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const latest = [...messages].reverse().find(message => message.role === "assistant")?.content || response;
+    const utterance = new SpeechSynthesisUtterance(latest);
+    utterance.lang = "en-NG";
+    utterance.rate = 1;
+    utterance.pitch = 0.96;
+    window.speechSynthesis.speak(utterance);
+    setVoiceError("");
+  };
   const openPanel = (next: WorkspacePanel) => {
     setPanel(next);
     const messages: Record<WorkspacePanel, string> = {
@@ -314,7 +376,13 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
   return <section className="live-workspace" aria-label="JARVIS live workspace">
     <div className="live-workspace-head"><div><span className="eyebrow">LIVE WORKSPACE</span><h3>Talk to JARVIS. Work in one place.</h3></div><span className="workspace-state"><span/> WORKSPACE READY</span></div>
     <div className="workspace-layout">
-      <aside className="workspace-avatar"><div className="avatar-orbit"><div className="avatar-core"><Sparkles size={30}/></div></div><b>JARVIS</b><small>PERSONAL AI ASSISTANT</small><div className="presence-status"><span/> Ready for your command</div><p>{response}</p><div className="voice-placeholder"><Mic size={15}/> Voice conversation coming next</div></aside>
+      <aside className="workspace-avatar"><div className="avatar-orbit"><div className="avatar-core"><Sparkles size={30}/></div></div><b>JARVIS</b><small>PERSONAL AI ASSISTANT</small><div className="presence-status"><span/> Ready for your command</div><p>{response}</p><div className="voice-controls">
+        <button type="button" onClick={listening ? () => recognitionRef.current?.stop() : startVoiceInput} disabled={thinking}>
+          <Mic size={14}/> {listening ? "Stop listening" : "Speak to JARVIS"}
+        </button>
+        <button type="button" onClick={speakLatest} disabled={thinking}> <AudioLines size={14}/> Speak reply </button>
+      </div>
+      {voiceError && <small className="workspace-notice">{voiceError}</small>}</aside>
       <div className="workspace-main"><nav className="workspace-tabs" aria-label="Workspace panels">
         <button className={panel === "home" ? "selected" : ""} onClick={() => openPanel("home")}>Overview</button>
         <button className={panel === "github" ? "selected" : ""} onClick={() => openPanel("github")}>GitHub</button>
@@ -335,7 +403,7 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
         {conversationError && <div className="workspace-notice">{conversationError}</div>}
       </div>}
     </div>
-    <form className="workspace-command" onSubmit={submit}><Sparkles size={17}/><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Tell JARVIS what you want to open or do…" aria-label="JARVIS command"/><button type="submit" disabled={!command.trim() || thinking}>Send <ChevronRight size={15}/></button></form>
+    <form className="workspace-command" onSubmit={submit}><Sparkles size={17}/><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Tell JARVIS what you want to open or do…" aria-label="JARVIS command"/><button type="button" className="voice-input-button" onClick={listening ? () => recognitionRef.current?.stop() : startVoiceInput} aria-label={listening ? "Stop microphone" : "Start microphone"} disabled={thinking}><Mic size={15}/></button><button type="submit" disabled={!command.trim() || thinking}>Send <ChevronRight size={15}/></button></form>
   </section>;
 }
 
