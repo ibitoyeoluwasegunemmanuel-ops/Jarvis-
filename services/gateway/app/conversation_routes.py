@@ -1,19 +1,19 @@
 """Authenticated JARVIS conversation endpoint."""
-from typing import Literal
 import logging
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.approval_routes import _require_owner
+from app.conversation_memory import retrieve_project_memory
 from app.conversation_service import (
     ConversationNotConfigured,
     ConversationProviderError,
     create_assistant_reply,
 )
 from app.conversation_store import list_conversation_history, save_conversation_turn
-from app.conversation_memory import retrieve_project_memory
 from app.monitoring_providers import github_repository
 
 router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
