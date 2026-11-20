@@ -263,6 +263,30 @@ class JarvisClient {
     ) as List<dynamic>;
   }
 
+  Future<List<dynamic>> memories(String workspaceId, {String? category}) async {
+    return await get(
+      '/v1/memory',
+      query: {
+        'workspace_id': workspaceId,
+        if (category != null && category.isNotEmpty) 'category': category,
+      },
+    ) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createMemory({
+    required String workspaceId,
+    required String category,
+    required String content,
+    String sourceRef = '',
+  }) async {
+    return await post('/v1/memory', {
+      'workspace_id': workspaceId,
+      'category': category,
+      'content': content,
+      'source_ref': sourceRef,
+    }) as Map<String, dynamic>;
+  }
+
   Future<void> heartbeatDevice(String deviceId) async {
     await post('/v1/devices/$deviceId/heartbeat', {});
   }
