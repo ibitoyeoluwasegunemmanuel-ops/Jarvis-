@@ -38,6 +38,8 @@ def _get_json(url: str, token: str = "") -> Any:
             if response.status != 200:
                 raise ProviderUnavailable("provider_http_error")
             body = response.read(_MAX_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as error:
+        raise ProviderUnavailable("provider_http_error") from error
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise ProviderUnavailable("provider_connection_failed") from error
     if len(body) > _MAX_RESPONSE_BYTES:
