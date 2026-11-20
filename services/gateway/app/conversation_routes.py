@@ -23,7 +23,8 @@ _GITHUB_QUERY_TERMS = ("github", "repository", "repo", "branch", "commit", "pull
 
 def _github_context_for_query(query: str) -> str | None:
     lowered = query.lower()
-    if not any(term in lowered for term in _GITHUB_QUERY_TERMS) and not re.search(r"\\b(ci|pr)\\b", lowered):
+    tokens = set(re.findall(r"[a-z0-9]+", lowered))
+    if not any(term in lowered for term in _GITHUB_QUERY_TERMS) and not ({"ci", "pr"} & tokens):
         return None
     try:
         snapshot = github_repository()
