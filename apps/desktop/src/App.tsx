@@ -26,6 +26,7 @@ type MonitoringProvider = {
   branches?: Array<{ name: string; protected: boolean }>;
   recent_commits?: Array<{ sha: string; message: string; author: string; committed_at: string; url: string }>;
   open_pull_requests?: Array<{ number: number; title: string; state: string; url: string; head: string; base: string }>;
+  workflow_runs?: Array<{ name: string; status: string; conclusion: string; branch: string; updated_at: string; url: string }>;
 };
 type MonitoringOverview = { read_only: boolean; providers: MonitoringProvider[] };
 type GatewayCapabilities = {
@@ -1370,6 +1371,7 @@ export default function App() {
                       {(provider.branches ?? []).map(item => <div className="monitor-item" key={item.name}><b>{item.name}</b><span>{item.protected ? "Protected branch" : "Branch"}</span></div>)}
                       {(provider.recent_commits ?? []).map(item => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={item.sha}><b>{item.message || item.sha}</b><span>{item.author} · {item.sha}</span></a>)}
                       {(provider.open_pull_requests ?? []).map(item => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={item.number}><b>#{item.number} {item.title}</b><span>{item.head} → {item.base}</span></a>)}
+                      {(provider.workflow_runs ?? []).map((item, index) => <a className="monitor-item" href={item.url} target="_blank" rel="noreferrer" key={`${item.name}-${item.updated_at}-${index}`}><b>{item.name}: {item.conclusion || item.status}</b><span>{item.branch} · {item.status}</span></a>)}
                       {provider.status !== "connected" && <p className="muted">{provider.detail || "GitHub repository monitoring is unavailable."}</p>}
                     </div>
                   )}
