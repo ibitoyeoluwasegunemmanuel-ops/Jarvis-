@@ -191,6 +191,8 @@ struct ApprovalRecord {
     expires_at: f64,
     decided_at: Option<f64>,
     consumed_at: Option<f64>,
+    #[serde(default)]
+    execution_available: bool,
 }
 #[derive(Deserialize)]
 struct ApprovalCreatedRecord {
@@ -766,7 +768,16 @@ async fn list_project_approvals(project_id: String, runtime: tauri::State<'_, Ga
         let response = client.get(url).header("X-Jarvis-Session", &runtime.session_token).header("X-Jarvis-Owner-Session", &token).send().await.map_err(|_| "gateway_not_ready".to_string())?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED { return Err("owner_session_expired".into()); }
         if !response.status().is_success() { return Err(format!("approval_list_failed_{}", response.status().as_u16())); }
-        response.json::<Vec<ApprovalRecord>>().await.map_err(|_| "approval_list_response_invalid".into())
+        let mut records = response.json::<Vec<ApprovalRecord>>().await
+            .map_err(|_| "approval_list_response_invalid".to_string())?;
+        let mut vault = runtime.approval_nonces.lock()
+            .map_err(|_| "native_approval_vault_unavailable".to_string())?;
+        prune_expired_approval_nonces(&mut vault);
+        for record in &mut records {
+            record.execution_available = record.status == "approved"
+                && vault.contains_key(&record.id);
+        }
+        Ok(records)
     }.await;
     token.zeroize(); result
 }
@@ -800,6 +811,7 @@ async fn create_project_approval(project_id: String, action: String, arguments: 
             arguments: created.arguments, arguments_hash: created.arguments_hash,
             requester: created.requester, status: created.status, created_at: created.created_at,
             expires_at: created.expires_at, decided_at: None, consumed_at: None,
+            execution_available: false,
         })
     }.await;
     token.zeroize(); result
