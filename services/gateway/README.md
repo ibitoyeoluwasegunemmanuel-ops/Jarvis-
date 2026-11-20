@@ -34,7 +34,7 @@ All other routes, including /v1/*, /docs, and /openapi.json, require the X-Jarvi
 
 The authenticated local endpoint `POST /v1/conversation/reply` now provides a provider-neutral Chat Completions adapter. It accepts up to 20 recent user/assistant messages and returns one assistant message. System messages and caller-supplied credentials are rejected.
 
-Configure the gateway process with:
+On Windows, configure the provider from **Settings → AI provider settings** in the desktop app. The API key is stored in Windows Credential Manager and is injected into the private gateway sidecar at startup. Restart JARVIS after saving a new provider configuration. The environment variables below remain available for development and other supported deployments:
 
 - `JARVIS_AI_API_KEY`: provider API key (kept in the gateway process environment; never send it from the webview).
 - `JARVIS_AI_MODEL`: model identifier supported by the selected provider.
