@@ -9,7 +9,7 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 use uuid::Uuid;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 const GATEWAY_BASE_URL: &str = "http://127.0.0.1:8765";
 const GATEWAY_CAPABILITIES_PATH: &str = "/v1/system/capabilities";
@@ -1842,6 +1842,7 @@ fn save_ai_provider_config(
     model: String,
     endpoint: Option<String>,
 ) -> Result<AiProviderStatus, String> {
+    let mut api_key = Zeroizing::new(api_key);
     let model = model.trim().to_string();
     let endpoint = endpoint.unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
     let endpoint = endpoint.trim().to_string();
@@ -1856,7 +1857,7 @@ fn save_ai_provider_config(
     #[cfg(target_os = "windows")]
     {
         let entry = ai_provider_entry()?;
-        let config = AiProviderConfig { api_key: api_key.clone(), model: model.clone(), endpoint: endpoint.clone() };
+        let config = AiProviderConfig { api_key: api_key.as_str().to_string(), model: model.clone(), endpoint: endpoint.clone() };
         let mut serialized = serde_json::to_string(&config)
             .map_err(|_| "ai_provider_configuration_invalid".to_string())?;
         let stored = entry.set_password(&serialized);
