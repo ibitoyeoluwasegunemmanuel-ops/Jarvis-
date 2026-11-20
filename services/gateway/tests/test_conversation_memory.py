@@ -1,8 +1,8 @@
 import pytest
 
+from app.conversation_memory import retrieve_project_memory
 from app.owner_auth import setup_owner
 from app.project_brain import create_project_memory
-from app.conversation_memory import retrieve_project_memory
 from app.workspace_store import create_project
 
 
