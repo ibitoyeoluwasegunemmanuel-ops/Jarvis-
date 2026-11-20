@@ -12,6 +12,7 @@ import {
   MonitorUp,
   Radio,
   ShieldCheck,
+  Settings,
   Sparkles,
   TerminalSquare
 } from "lucide-react";
@@ -46,6 +47,7 @@ type CloudMemoryRecord = {
   id: string; workspace_id: string; category: "preference" | "fact" | "decision" | "note" | "reference";
   content: string; source_ref: string; created_at: string;
 };
+type AiProviderStatus = { configured: boolean; model: string; endpoint: string };
 type CloudSyncStatus = {
   connected: boolean;
   workspace_id: string;
@@ -354,6 +356,12 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectError, setProjectError] = useState("");
+  const [aiProviderStatus, setAiProviderStatus] = useState<AiProviderStatus | null>(null);
+  const [aiProviderKey, setAiProviderKey] = useState("");
+  const [aiProviderModel, setAiProviderModel] = useState("");
+  const [aiProviderEndpoint, setAiProviderEndpoint] = useState("https://api.openai.com/v1/chat/completions");
+  const [aiProviderBusy, setAiProviderBusy] = useState(false);
+  const [aiProviderMessage, setAiProviderMessage] = useState("");
   const [cloudApiUrl, setCloudApiUrl] = useState("");
   const [cloudSupabaseUrl, setCloudSupabaseUrl] = useState("");
   const [cloudPublicKey, setCloudPublicKey] = useState("");
@@ -555,6 +563,17 @@ export default function App() {
       setCloudMemoryBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (active !== "Settings") return;
+    invoke<AiProviderStatus>("get_ai_provider_status")
+      .then(status => {
+        setAiProviderStatus(status);
+        setAiProviderModel(status.model || "");
+        setAiProviderEndpoint(status.endpoint);
+      })
+      .catch(() => setAiProviderMessage("Secure provider settings are unavailable on this device."));
+  }, [active]);
 
   useEffect(() => {
     if (active !== "Memory" || !cloudSyncStatus?.connected) return;
@@ -1101,7 +1120,8 @@ export default function App() {
     { label: "Engineering", icon: TerminalSquare },
     { label: "Security", icon: ShieldCheck },
     { label: "Analytics", icon: Activity },
-    { label: "Monitoring", icon: Radio }
+    { label: "Monitoring", icon: Radio },
+    { label: "Settings", icon: Settings }
   ];
 
   if (!authStatus || !authStatus.authenticated) {
@@ -1135,7 +1155,51 @@ export default function App() {
       <div className="content">
         {authError && <div className="dashboard-error">{authError}</div>}
         <div className="welcome-row"><div><div className="eyebrow"><span className="pulse"/> SYSTEM INITIALISING</div><h1>Your workspace.<br/><em>One intelligent system.</em></h1><p className="lead">A unified environment for building, analysing, researching and operating your projects.</p></div><div className="presence-card"><div className="presence-orb"><AudioLines size={27}/></div><div><b>JARVIS presence</b><span>Voice interface is being prepared</span></div><span className="coming">IN DEVELOPMENT</span></div></div>
-        {active === "Memory" ? (
+        {active === "Settings" ? (
+          <section className="projects-workspace">
+            <div className="section-heading">
+              <div><span className="eyebrow">PRIVATE CONFIGURATION</span><h2>AI provider settings</h2></div>
+              <span className="tag">{aiProviderStatus?.configured ? "PROVIDER SAVED" : "NOT CONFIGURED"}</span>
+            </div>
+            <p className="monitor-intro">Your API key is saved in Windows Credential Manager. JARVIS never sends it to the webview or stores it in this repository.</p>
+            <article className="panel-card">
+              <div className="panel-title"><div><span className="eyebrow">CONVERSATION ENGINE</span><h3>Connect an AI provider</h3></div><ShieldCheck size={18}/></div>
+              <form className="project-form" onSubmit={async event => {
+                event.preventDefault();
+                setAiProviderBusy(true);
+                setAiProviderMessage("");
+                try {
+                  const status = await invoke<AiProviderStatus>("save_ai_provider_config", {
+                    apiKey: aiProviderKey,
+                    model: aiProviderModel,
+                    endpoint: aiProviderEndpoint
+                  });
+                  setAiProviderStatus(status);
+                  setAiProviderKey("");
+                  setAiProviderMessage("Saved securely. Restart JARVIS to activate the provider connection.");
+                } catch (error) {
+                  setAiProviderMessage(String(error).includes("secure_ai_provider_storage_supported_on_windows_only")
+                    ? "Secure provider storage is currently available on Windows only."
+                    : "JARVIS could not save the provider settings securely.");
+                } finally {
+                  setAiProviderBusy(false);
+                }
+              }}>
+                <label htmlFor="ai-provider-key">API key</label>
+                <input id="ai-provider-key" type="password" autoComplete="off" required minLength={10} maxLength={4096} value={aiProviderKey} onChange={event => setAiProviderKey(event.target.value)} placeholder={aiProviderStatus?.configured ? "Enter a new key to replace the saved key" : "Paste your provider API key"}/>
+                <label htmlFor="ai-provider-model">Model</label>
+                <input id="ai-provider-model" required maxLength={120} value={aiProviderModel} onChange={event => setAiProviderModel(event.target.value)} placeholder="Provider model identifier"/>
+                <label htmlFor="ai-provider-endpoint">HTTPS API endpoint</label>
+                <input id="ai-provider-endpoint" required maxLength={500} type="url" value={aiProviderEndpoint} onChange={event => setAiProviderEndpoint(event.target.value)} placeholder="https://api.openai.com/v1/chat/completions"/>
+                <button className="primary-button" type="submit" disabled={aiProviderBusy || !aiProviderKey.trim() || !aiProviderModel.trim()}>
+                  {aiProviderBusy ? "Saving securely…" : "Save provider settings"}
+                </button>
+              </form>
+              {aiProviderMessage && <div className="workspace-notice">{aiProviderMessage}</div>}
+              {aiProviderStatus?.configured && <p className="monitor-intro">Saved model: {aiProviderStatus.model}. The secret is not displayed again.</p>}
+            </article>
+          </section>
+        ) : active === "Memory" ? (
           <section className="projects-workspace">
             <div className="section-heading">
               <div><span className="eyebrow">SHARED WORKSPACE MEMORY</span><h2>Memory</h2></div>
