@@ -246,6 +246,11 @@
 .project-form select:focus{border-color:#9180e7;box-shadow:0 0 0 3px #8d75ff18}
 .project-form>button.primary-button{justify-self:start;border:0;border-radius:7px;background:#7962d8;color:white;padding:10px 14px;font-size:10px;font-weight:600;cursor:pointer}
 .project-form>button.primary-button:disabled{opacity:.45;cursor:not-allowed}
+.provider-saved-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:12px}
+.provider-saved-actions .monitor-intro{margin:0}
+.project-form>button.secondary-button,.provider-saved-actions button.secondary-button{border:1px solid #a56c6c66;border-radius:7px;background:#a13e3e18;color:#e6aaaa;padding:9px 12px;font-size:10px;font-weight:600;cursor:pointer}
+.provider-saved-actions button.secondary-button:hover{border-color:#d58a8a;background:#a13e3e30}
+.provider-saved-actions button.secondary-button:disabled{opacity:.45;cursor:not-allowed}
 
 
 .voice-controls{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
