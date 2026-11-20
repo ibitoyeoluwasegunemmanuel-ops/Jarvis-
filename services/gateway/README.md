@@ -30,6 +30,10 @@ All other routes, including /v1/*, /docs, and /openapi.json, require the X-Jarvi
 - The webview currently checks only the public health endpoint. A native authenticated request bridge for protected routes is still needed.
 - Windows CI builds the gateway sidecar with PyInstaller and packages it with the app; the full NSIS installer path is under validation.
 
+## Approval and task execution lifecycle
+
+The desktop approval flow keeps one-time execution nonces only in the native Windows process memory. The approval record itself is durable, but the nonce is deliberately not persisted. The native bridge reports an approval as executable only when its nonce is still present and unexpired in the current session. After restarting JARVIS, an older approved record remains visible for audit, but the UI asks the owner to create and approve a fresh request rather than showing a nonfunctional execution button. Task execution remains limited to the allowlisted `project.task.create` action and is re-authorized, bound to exact arguments, and consumed once by the local dispatcher.
+
 ## Conversational AI runtime
 
 The owner-authenticated read-only endpoint `GET /v1/monitoring/providers/overview` includes Vercel, Supabase, and GitHub summaries. GitHub data includes repository metadata, branches, recent commits, open pull requests, and the latest GitHub Actions workflow runs. Data is fetched from fixed GitHub API endpoints; caller-supplied URLs are not accepted. Configure `GITHUB_TOKEN` only when authenticated access or higher rate limits are required.
