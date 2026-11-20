@@ -1855,10 +1855,10 @@ fn save_ai_provider_config(
     }
     #[cfg(target_os = "windows")]
     {
+        let entry = ai_provider_entry()?;
         let config = AiProviderConfig { api_key: api_key.clone(), model: model.clone(), endpoint: endpoint.clone() };
         let mut serialized = serde_json::to_string(&config)
             .map_err(|_| "ai_provider_configuration_invalid".to_string())?;
-        let entry = ai_provider_entry()?;
         let stored = entry.set_password(&serialized);
         serialized.zeroize();
         stored.map_err(|_| "secure_credential_store_write_failed".to_string())?;
