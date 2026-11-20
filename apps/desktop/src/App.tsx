@@ -257,10 +257,10 @@ function LiveWorkspace({ onOpenProjects }: { onOpenProjects: () => void }) {
     if (!value) return;
     const normalized = value.toLowerCase().replace(/[.!?]/g, " ");
     const requestedPanel: WorkspacePanel | null =
-      /\\b(github|git hub|repository|repo)\\b/.test(normalized) ? "github" :
-      /\\b(projects?|tasks?)\\b/.test(normalized) ? "projects" :
-      /\\b(calendar|schedule|events?)\\b/.test(normalized) ? "calendar" :
-      /\\b(home|overview|dashboard)\\b/.test(normalized) ? "home" : null;
+      /\b(github|git hub|repository|repo)\b/.test(normalized) ? "github" :
+      /\b(projects?|tasks?)\b/.test(normalized) ? "projects" :
+      /\b(calendar|schedule|events?)\b/.test(normalized) ? "calendar" :
+      /\b(home|overview|dashboard)\b/.test(normalized) ? "home" : null;
     if (requestedPanel) {
       openPanel(requestedPanel);
       if (requestedPanel === "projects") onOpenProjects();
