@@ -2157,3 +2157,23 @@ impl Drop for GatewayRuntime {
         }
     }
 }
+
+
+#[cfg(test)]
+mod identifier_tests {
+    use super::valid_workspace_id;
+
+    #[test]
+    fn accepts_compact_hexadecimal_identifiers() {
+        assert!(valid_workspace_id("0123456789abcdef0123456789ABCDEF"));
+    }
+
+    #[test]
+    fn rejects_malformed_identifiers() {
+        assert!(!valid_workspace_id(""));
+        assert!(!valid_workspace_id("0123456789abcdef"));
+        assert!(!valid_workspace_id("01234567-89ab-cdef-0123-456789abcdef"));
+        assert!(!valid_workspace_id("../approvals"));
+        assert!(!valid_workspace_id("0123456789abcdef0123456789abcdeg"));
+    }
+}
