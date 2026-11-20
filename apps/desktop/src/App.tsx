@@ -44,7 +44,7 @@ type OwnerAuthStatus = {
 };
 type CloudMemoryRecord = {
   id: string; workspace_id: string; category: "preference" | "fact" | "decision" | "note" | "reference";
-  content: string; source_ref: string; created_at: number;
+  content: string; source_ref: string; created_at: string;
 };
 type CloudSyncStatus = {
   connected: boolean;
@@ -1108,7 +1108,7 @@ export default function App() {
             <div className="panel-card">
               <div className="panel-title"><div><span className="eyebrow">CLOUD RECORDS</span><h3>{cloudMemories.length} saved memories</h3></div></div>
               {cloudMemories.length === 0 ? <div className="projects-empty">No shared memories loaded yet. Refresh to retrieve entries from your workspace.</div> : cloudMemories.map(item => (
-                <div className="activity-line" key={item.id}><span className="activity-dot done"/><div><b>{item.category.toUpperCase()}</b><small>{item.content}</small>{item.source_ref && <small>Source: {item.source_ref}</small>}</div><time>{new Date(item.created_at * 1000).toLocaleDateString()}</time></div>
+                <div className="activity-line" key={item.id}><span className="activity-dot done"/><div><b>{item.category.toUpperCase()}</b><small>{item.content}</small>{item.source_ref && <small>Source: {item.source_ref}</small>}</div><time>{new Date(item.created_at).toLocaleDateString()}</time></div>
               ))}
             </div>
           </section>
