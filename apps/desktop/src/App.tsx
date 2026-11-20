@@ -235,6 +235,50 @@ function AuthScreen({
   );
 }
 
+type WorkspacePanel = "home" | "github" | "projects" | "calendar";
+
+function LiveWorkspace() {
+  const [panel, setPanel] = useState<WorkspacePanel>("home");
+  const [command, setCommand] = useState("");
+  const [response, setResponse] = useState("I'm ready. Choose a workspace panel or enter a request. Voice conversation is the next integration milestone.");
+  const openPanel = (next: WorkspacePanel) => {
+    setPanel(next);
+    const messages: Record<WorkspacePanel, string> = {
+      home: "Your JARVIS workspace is ready.",
+      github: "GitHub workspace selected. The repository link below opens your connected JARVIS source. Live account authorisation and repository data sync are not connected yet.",
+      projects: "Your locally stored JARVIS projects are available in the Projects section. Cloud-wide project and task synchronisation is still being expanded.",
+      calendar: "Calendar panel selected. Connect a calendar integration to load events; no calendar account is connected yet."
+    };
+    setResponse(messages[next]);
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const value = command.trim();
+    if (!value) return;
+    setResponse("Request received: “" + value + "”. The conversational AI runtime is not connected yet, so I have not executed this request. You can open one of the available workspace panels above.");
+    setCommand("");
+  };
+  return <section className="live-workspace" aria-label="JARVIS live workspace">
+    <div className="live-workspace-head"><div><span className="eyebrow">LIVE WORKSPACE</span><h3>Talk to JARVIS. Work in one place.</h3></div><span className="workspace-state"><span/> WORKSPACE READY</span></div>
+    <div className="workspace-layout">
+      <aside className="workspace-avatar"><div className="avatar-orbit"><div className="avatar-core"><Sparkles size={30}/></div></div><b>JARVIS</b><small>PERSONAL AI ASSISTANT</small><div className="presence-status"><span/> Ready for your command</div><p>{response}</p><div className="voice-placeholder"><Mic size={15}/> Voice conversation coming next</div></aside>
+      <div className="workspace-main"><nav className="workspace-tabs" aria-label="Workspace panels">
+        <button className={panel === "home" ? "selected" : ""} onClick={() => openPanel("home")}>Overview</button>
+        <button className={panel === "github" ? "selected" : ""} onClick={() => openPanel("github")}>GitHub</button>
+        <button className={panel === "projects" ? "selected" : ""} onClick={() => openPanel("projects")}>Projects</button>
+        <button className={panel === "calendar" ? "selected" : ""} onClick={() => openPanel("calendar")}>Calendar</button>
+      </nav>
+      <div className="workspace-panel">
+        {panel === "home" && <><div className="workspace-panel-icon"><BrainCircuit size={22}/></div><h4>Your command workspace</h4><p>Open connected tools and keep the assistant conversation beside your work. JARVIS will show connection status honestly and ask before taking consequential actions.</p><div className="workspace-shortcuts"><button onClick={() => openPanel("github")}><Command size={16}/> Open GitHub panel <ChevronRight size={15}/></button><button onClick={() => openPanel("projects")}><FolderKanban size={16}/> View projects <ChevronRight size={15}/></button></div></>}
+        {panel === "github" && <><div className="workspace-panel-icon"><TerminalSquare size={22}/></div><span className="eyebrow">GITHUB WORKSPACE</span><h4>JARVIS source repository</h4><p>Open the active development branch and review commits, pull requests and build checks.</p><a className="workspace-external-link" href="https://github.com/ibitoyeoluwasegunemmanuel-ops/Jarvis-/tree/feature/cross-device-foundation" target="_blank" rel="noreferrer">Open JARVIS on GitHub <ChevronRight size={15}/></a><small className="workspace-notice">GitHub account authorisation and live repository data are not yet integrated inside JARVIS.</small></>}
+        {panel === "projects" && <><div className="workspace-panel-icon"><FolderKanban size={22}/></div><h4>Project management</h4><p>Use the existing Projects section to manage locally stored projects, tasks, decisions, risks and approvals.</p><button className="workspace-action" onClick={() => document.querySelector<HTMLButtonElement>('[data-nav="Projects"]')?.click()}>Go to Projects <ChevronRight size={15}/></button></>}
+        {panel === "calendar" && <><div className="workspace-panel-icon"><Activity size={22}/></div><h4>Calendar connection</h4><p>No calendar provider is connected yet. Calendar authorisation will be added as a scoped integration.</p><span className="workspace-notice">NOT CONNECTED</span></>}
+      </div></div>
+    </div>
+    <form className="workspace-command" onSubmit={submit}><Sparkles size={17}/><input value={command} onChange={event => setCommand(event.target.value)} placeholder="Tell JARVIS what you want to open or do…" aria-label="JARVIS command"/><button type="submit" disabled={!command.trim()}>Send <ChevronRight size={15}/></button></form>
+  </section>;
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
@@ -1449,8 +1493,8 @@ export default function App() {
               <article className="metric-card"><div className="metric-icon green"><ShieldCheck size={18}/></div><span>SECURITY</span><strong>{capabilities?.security.gateway_session_configured ? "Session protected" : capabilitiesError ? "Bridge unavailable" : "Checking session"}</strong><small>{capabilities?.security.owner_session_authenticated ? "Owner session verified" : "Local owner account configured"}</small></article>
               <article className="metric-card"><div className="metric-icon amber"><Radio size={18}/></div><span>MONITORING</span><strong>Not connected</strong><small>No background checks yet</small></article>
             </div>
-            <div className="lower-grid"><article className="panel-card"><div className="panel-title"><div><span className="eyebrow">COMMAND INTERFACE</span><h3>What are we working on?</h3></div><span className="tag">TEXT MODE</span></div><p className="panel-copy">Owner authentication and local project storage are active. Task execution and specialist agents are not connected yet.</p><div className="composer"><input value={message} onChange={e => setMessage(e.target.value)} placeholder="Describe a task…" aria-label="Task description" /><button disabled={!message.trim()} onClick={() => setMessage("")}><Sparkles size={16}/> Clear draft</button></div><div className="hint"><Mic size={14}/> Voice input will be enabled after realtime session and permission controls are implemented.</div></article>
-            <article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
+            <LiveWorkspace/>
+            <div className="lower-grid"><article className="panel-card activity-card"><div className="panel-title"><div><span className="eyebrow">SYSTEM ACTIVITY</span><h3>Build status</h3></div><Activity size={17}/></div><div className="activity-line"><span className="activity-dot done"/><div><b>Product specification</b><small>Master PRD and system boundaries committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot done"/><div><b>Architecture & security</b><small>Data model, threat model and standards committed</small></div><time>DONE</time></div><div className="activity-line"><span className="activity-dot current"/><div><b>Application foundation</b><small>Desktop shell and authenticated local gateway</small></div><time>NOW</time></div><div className="activity-line"><span className="activity-dot"/><div><b>Agent orchestration</b><small>Queued behind persistent project state</small></div><time>QUEUED</time></div></article></div>
           </>
         )}
         <footer><span>JARVIS · PRIVATE AI OPERATING ENVIRONMENT</span><span><MonitorUp size={13}/> Desktop build · Early foundation</span></footer>
