@@ -293,7 +293,6 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [active, setActive] = useState("Overview");
-  const [message, setMessage] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectError, setProjectError] = useState("");
@@ -482,7 +481,6 @@ export default function App() {
       await invoke("logout_owner");
       const owner = await invoke<OwnerAuthStatus>("get_owner_auth_status");
       setAuthStatus(owner);
-      setMessage("");
     } catch (error) {
       setAuthError(readableAuthError(error));
     } finally {
