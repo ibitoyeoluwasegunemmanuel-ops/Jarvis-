@@ -42,3 +42,25 @@ def test_project_sync_requires_bearer_token():
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "bearer_token_required"
+
+
+def test_memory_read_requires_bearer_token():
+    response = client.get(
+        "/v1/memory",
+        params={"workspace_id": "00000000-0000-0000-0000-000000000001"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "bearer_token_required"
+
+
+def test_memory_create_requires_bearer_token():
+    response = client.post(
+        "/v1/memory",
+        json={
+            "workspace_id": "00000000-0000-0000-0000-000000000001",
+            "category": "preference",
+            "content": "Use concise replies",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "bearer_token_required"
